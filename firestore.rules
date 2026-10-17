@@ -77,6 +77,106 @@ service cloud.firestore {
         && request.resource.data.fechaActualizacion == request.time;
 
       allow delete: if false;
+
+      match /equipos/{equipoId} {
+
+        function administraAcademia() {
+          return esAdministradorActivo()
+            && get(
+              /databases/$(database)/documents/academias/$(academiaId)
+            ).data.creadoPor == request.auth.uid;
+        }
+
+        function academiaHabilitada() {
+          return get(
+            /databases/$(database)/documents/academias/$(academiaId)
+          ).data.activa == true;
+        }
+
+        function categoriaHabilitada() {
+          let categoriaId = request.resource.data.categoriaId;
+
+          return categoriaId is string
+            && categoriaId.matches('^[A-Za-z0-9_-]{1,128}$')
+            && exists(
+              /databases/$(database)/documents/academias/$(academiaId)/categorias/$(categoriaId)
+            )
+            && get(
+              /databases/$(database)/documents/academias/$(academiaId)/categorias/$(categoriaId)
+            ).data.activa == true;
+        }
+
+        function nombreEquipoValido() {
+          let nombre = request.resource.data.nombre;
+
+          return nombre is string
+            && nombre.size() >= 2
+            && nombre.size() <= 60
+            && nombre.matches("^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 .'-]+$")
+            && nombre == nombre.trim().replace(' +', ' ');
+        }
+
+        allow get, list: if administraAcademia();
+
+        allow create: if administraAcademia()
+          && academiaHabilitada()
+          && request.resource.data.keys().hasAll([
+            'academiaId',
+            'categoriaId',
+            'nombre',
+            'activo',
+            'creadoPor',
+            'actualizadoPor',
+            'fechaCreacion',
+            'fechaActualizacion',
+            'solicitudId'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'academiaId',
+            'categoriaId',
+            'nombre',
+            'activo',
+            'creadoPor',
+            'actualizadoPor',
+            'fechaCreacion',
+            'fechaActualizacion',
+            'solicitudId'
+          ])
+          && request.resource.data.academiaId == academiaId
+          && categoriaHabilitada()
+          && nombreEquipoValido()
+          && equipoId == (
+            request.resource.data.categoriaId
+            + '_'
+            + request.resource.data.nombre.lower()
+          )
+          && request.resource.data.activo == true
+          && request.resource.data.creadoPor == request.auth.uid
+          && request.resource.data.actualizadoPor == request.auth.uid
+          && request.resource.data.fechaCreacion == request.time
+          && request.resource.data.fechaActualizacion == request.time
+          && request.resource.data.solicitudId is string
+          && request.resource.data.solicitudId.matches(
+            '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+          );
+
+        // Por ahora solo permite activar o desactivar el equipo.
+        allow update: if administraAcademia()
+          && academiaHabilitada()
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'activo',
+                'actualizadoPor',
+                'fechaActualizacion'
+              ])
+          && request.resource.data.activo is bool
+          && request.resource.data.actualizadoPor == request.auth.uid
+          && request.resource.data.fechaActualizacion == request.time;
+
+        allow delete: if false;
+      }
+
       match /categorias/{categoriaId} {
 
         function puedeGestionarAcademia() {

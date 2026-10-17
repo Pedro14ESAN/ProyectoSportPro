@@ -19,6 +19,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 fun AcademiasScreen(
     usuarioId: String,
     onVerCategorias: (String) -> Unit,
+    onVerEquipos: (String) -> Unit,
     onCerrarSesion: () -> Unit
 ) {
     val academiaViewModel: AcademiaViewModel = viewModel(
@@ -167,6 +168,15 @@ fun AcademiasScreen(
                                 enabled = !estado.cargando && academia.activa
                             ) {
                                 Text("Ver categorías")
+                            }
+
+                            TextButton(
+                                onClick = {
+                                    onVerEquipos(academia.id)
+                                },
+                                enabled = !estado.cargando && academia.activa
+                            ) {
+                                Text("Ver equipos")
                             }
                         }
                     }
