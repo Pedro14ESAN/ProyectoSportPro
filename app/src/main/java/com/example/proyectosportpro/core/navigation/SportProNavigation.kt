@@ -1,5 +1,5 @@
 package com.example.proyectosportpro.core.navigation
-import com.example.proyectosportpro.features.auth.presentation.CompletarPerfilScreen
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,20 +13,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.proyectosportpro.features.academia.presentation.AcademiasScreen
+import com.example.proyectosportpro.features.academia.presentation.CategoriasScreen
+import com.example.proyectosportpro.features.academia.presentation.EquiposScreen
 import com.example.proyectosportpro.features.auth.domain.PerfilUsuario
+import com.example.proyectosportpro.features.auth.domain.RolUsuario
 import com.example.proyectosportpro.features.auth.presentation.CompletarFechaScreen
+import com.example.proyectosportpro.features.auth.presentation.CompletarPerfilScreen
 import com.example.proyectosportpro.features.auth.presentation.LoginScreen
 import com.example.proyectosportpro.features.auth.presentation.LoginViewModel
 import com.example.proyectosportpro.features.auth.presentation.RegistroScreen
-import com.example.proyectosportpro.features.academia.presentation.AcademiasScreen
-import com.example.proyectosportpro.features.auth.domain.RolUsuario
-import androidx.navigation.NavType
-import androidx.navigation.navArgument
-import com.example.proyectosportpro.features.academia.presentation.CategoriasScreen
 
 private object Rutas {
     const val INICIO = "inicio"
@@ -35,8 +37,8 @@ private object Rutas {
     const val COMPLETAR_FECHA = "completar_fecha"
     const val PERFIL_FALTANTE = "perfil_faltante"
     const val CUENTA = "cuenta"
-
     const val CATEGORIAS = "categorias/{academiaId}"
+    const val EQUIPOS = "equipos/{academiaId}"
 }
 
 @Composable
@@ -73,6 +75,11 @@ fun SportProNavigation(
                     rutaActual == Rutas.CATEGORIAS ->
                 Rutas.CATEGORIAS
 
+            estado.perfil?.rol == RolUsuario.ADM &&
+                    estado.perfil?.estado == "ACTIVO" &&
+                    rutaActual == Rutas.EQUIPOS ->
+                Rutas.EQUIPOS
+
             estado.perfil != null ->
                 Rutas.CUENTA
 
@@ -85,7 +92,7 @@ fun SportProNavigation(
 
         if (rutaActual != destino) {
             navController.navigate(destino) {
-                // Descarta las pantallas anteriores y sus ViewModels.
+                // Limpia las pantallas anteriores cuando cambia el acceso.
                 popUpTo(navController.graph.id) {
                     inclusive = true
                 }
@@ -147,6 +154,7 @@ fun SportProNavigation(
                 )
             }
         }
+
         composable(Rutas.CUENTA) {
             val perfil = estado.perfil
 
@@ -163,6 +171,11 @@ fun SportProNavigation(
                         usuarioId = perfil.uid,
                         onVerCategorias = { academiaId ->
                             navController.navigate("categorias/$academiaId") {
+                                launchSingleTop = true
+                            }
+                        },
+                        onVerEquipos = { academiaId ->
+                            navController.navigate("equipos/$academiaId") {
                                 launchSingleTop = true
                             }
                         },
@@ -200,6 +213,38 @@ fun SportProNavigation(
                 CategoriasScreen(
                     onVolver = {
                         navController.popBackStack()
+                    }
+                )
+            }
+        }
+
+        composable(
+            route = Rutas.EQUIPOS,
+            arguments = listOf(
+                navArgument("academiaId") {
+                    type = NavType.StringType
+                }
+            )
+        ) { entradaEquipos ->
+            val perfil = estado.perfil
+            val academiaId = entradaEquipos.arguments
+                ?.getString("academiaId")
+
+            if (
+                perfil?.rol == RolUsuario.ADM &&
+                perfil.estado == "ACTIVO" &&
+                !estado.requiereFechaNacimiento &&
+                !estado.cargando &&
+                academiaId != null
+            ) {
+                EquiposScreen(
+                    onVolver = {
+                        navController.popBackStack()
+                    },
+                    onVerCategorias = {
+                        navController.navigate("categorias/$academiaId") {
+                            launchSingleTop = true
+                        }
                     }
                 )
             }
