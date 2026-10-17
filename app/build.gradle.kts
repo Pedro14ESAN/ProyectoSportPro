@@ -60,9 +60,12 @@ dependencies {
     // ViewModel para las pantallas de Compose.
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
 
-// Permite observar el estado de la pantalla respetando su ciclo de vida.
+    // Permite observar el estado de la pantalla respetando su ciclo de vida.
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
 
-// Permite esperar las operaciones de Firebase con corrutinas.
+    // Permite esperar las operaciones de Firebase con corrutinas.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+
+    // Navigation para Jetpack Compose.
+    implementation("androidx.navigation:navigation-compose:2.10.2")
 }

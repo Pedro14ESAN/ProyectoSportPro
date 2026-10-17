@@ -26,9 +26,15 @@ import java.time.LocalDate
 
 @Composable
 fun RegistroScreen(
+    onRegistroCompletado: () -> Unit,
     viewModel: RegistroViewModel = viewModel()
 ) {
     val estado by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(estado.registroExitoso) {
+        if (estado.registroExitoso) {
+            onRegistroCompletado()
+        }
+    }
 
     var nombre by rememberSaveable { mutableStateOf("") }
     var correo by rememberSaveable { mutableStateOf("") }
