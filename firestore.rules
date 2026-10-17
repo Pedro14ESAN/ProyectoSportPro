@@ -8,6 +8,77 @@ service cloud.firestore {
         && request.auth.uid == uid;
     }
 
+    function esAdministradorActivo() {
+      return request.auth != null
+        && exists(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        )
+        && get(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        ).data.rol == 'ADM'
+        && get(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        ).data.estado == 'ACTIVO';
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    match /academias/{academiaId} {
+
+      function nombreValido() {
+        return request.resource.data.nombre is string
+          && request.resource.data.nombre.size() >= 2
+          && request.resource.data.nombre.size() <= 100;
+      }
+
+      // En esta primera versión, cada administrador gestiona
+      // únicamente las academias que creó.
+      allow get, list: if esAdministradorActivo()
+        && resource.data.creadoPor == request.auth.uid;
+
+      allow create: if esAdministradorActivo()
+        && request.resource.data.keys().hasAll([
+          'nombre',
+          'activa',
+          'creadoPor',
+          'actualizadoPor',
+          'fechaCreacion',
+          'fechaActualizacion'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'nombre',
+          'activa',
+          'creadoPor',
+          'actualizadoPor',
+          'fechaCreacion',
+          'fechaActualizacion'
+        ])
+        && nombreValido()
+        && request.resource.data.activa == true
+        && request.resource.data.creadoPor == request.auth.uid
+        && request.resource.data.actualizadoPor == request.auth.uid
+        && request.resource.data.fechaCreacion == request.time
+        && request.resource.data.fechaActualizacion == request.time;
+
+      allow update: if esAdministradorActivo()
+        && resource.data.creadoPor == request.auth.uid
+        && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'nombre',
+              'activa',
+              'actualizadoPor',
+              'fechaActualizacion'
+            ])
+        && nombreValido()
+        && request.resource.data.activa is bool
+        && request.resource.data.actualizadoPor == request.auth.uid
+        && request.resource.data.fechaActualizacion == request.time;
+
+      allow delete: if false;
+    }
+
     match /users/{uid} {
       allow get: if esPropietario(uid);
 
