@@ -14,12 +14,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+data class RecuperacionUiState(
+    val visible: Boolean = false,
+    val correo: String = "",
+    val enviando: Boolean = false,
+    val solicitudCompletada: Boolean = false,
+    val error: String? = null
+)
+
 class LoginViewModel : ViewModel() {
 
     private val repository = AuthRepository()
 
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState = _uiState.asStateFlow()
+
+    private val _recuperacion = MutableStateFlow(RecuperacionUiState())
+    val recuperacion = _recuperacion.asStateFlow()
 
     private var operacion: Job? = null
 
@@ -28,14 +39,10 @@ class LoginViewModel : ViewModel() {
     }
 
     fun revisarSesion() {
-        if (_uiState.value.cargando) {
-            return
-        }
+        if (_uiState.value.cargando) return
 
         if (repository.obtenerUidActual() == null) {
-            _uiState.value = LoginUiState(
-                sesionRevisada = true
-            )
+            _uiState.value = LoginUiState(sesionRevisada = true)
             return
         }
 
@@ -52,16 +59,10 @@ class LoginViewModel : ViewModel() {
         }
     }
 
-    fun iniciarSesion(
-        correo: String,
-        contrasena: String
-    ) {
-        if (_uiState.value.cargando) {
-            return
-        }
+    fun iniciarSesion(correo: String, contrasena: String) {
+        if (_uiState.value.cargando || _recuperacion.value.visible) return
 
-        // Una sesión existente debe resolverse o cerrarse
-        // antes de iniciar sesión con otra cuenta.
+        // Resuelve primero cualquier sesión que siga abierta.
         if (repository.obtenerUidActual() != null) {
             revisarSesion()
             return
@@ -91,11 +92,7 @@ class LoginViewModel : ViewModel() {
 
         operacion = viewModelScope.launch {
             try {
-                repository.iniciarSesion(
-                    correo = correoLimpio,
-                    contrasena = contrasena
-                )
-
+                repository.iniciarSesion(correoLimpio, contrasena)
                 cargarPerfil()
             } catch (e: CancellationException) {
                 throw e
@@ -123,7 +120,6 @@ class LoginViewModel : ViewModel() {
 
         if (perfil.estado !in estadosPermitidos) {
             repository.cerrarSesion()
-
             _uiState.value = LoginUiState(
                 sesionRevisada = true,
                 error = "Esta cuenta no está habilitada para acceder. " +
@@ -134,7 +130,6 @@ class LoginViewModel : ViewModel() {
 
         if (!perfil.aceptoTerminos) {
             repository.cerrarSesion()
-
             _uiState.value = LoginUiState(
                 sesionRevisada = true,
                 error = "La cuenta requiere revisar la aceptación " +
@@ -153,12 +148,99 @@ class LoginViewModel : ViewModel() {
     fun cerrarSesion() {
         operacion?.cancel()
         operacion = null
-
         repository.cerrarSesion()
+        _uiState.value = LoginUiState(sesionRevisada = true)
+    }
 
-        // Elimina del estado el perfil y los datos de la sesión.
-        _uiState.value = LoginUiState(
-            sesionRevisada = true
+    fun abrirRecuperacion(correo: String) {
+        if (_uiState.value.cargando || _recuperacion.value.enviando) return
+
+        _recuperacion.value = RecuperacionUiState(
+            visible = true,
+            correo = correo.trim()
+        )
+    }
+
+    fun cambiarCorreoRecuperacion(correo: String) {
+        val actual = _recuperacion.value
+        if (actual.enviando || actual.solicitudCompletada) return
+
+        _recuperacion.value = actual.copy(
+            correo = correo,
+            error = null
+        )
+    }
+
+    fun cerrarRecuperacion() {
+        if (_recuperacion.value.enviando) return
+        _recuperacion.value = RecuperacionUiState()
+    }
+
+    fun enviarRecuperacion() {
+        val actual = _recuperacion.value
+
+        if (!actual.visible || actual.enviando ||
+            actual.solicitudCompletada || _uiState.value.cargando
+        ) {
+            return
+        }
+
+        val correo = actual.correo.trim()
+
+        if (!Patterns.EMAIL_ADDRESS.matcher(correo).matches()) {
+            _recuperacion.value = actual.copy(
+                error = "Ingresa un correo electrónico válido."
+            )
+            return
+        }
+
+        _recuperacion.value = actual.copy(
+            correo = correo,
+            enviando = true,
+            error = null
+        )
+
+        viewModelScope.launch {
+            try {
+                repository.enviarRecuperacionContrasena(correo) // Envía el enlace
+                completarSolicitudRecuperacion()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Mantiene la misma respuesta si el correo no existe.
+                if (e is FirebaseAuthException &&
+                    e.errorCode == "ERROR_USER_NOT_FOUND"
+                ) {
+                    completarSolicitudRecuperacion()
+                } else {
+                    val mensaje = when (e) {
+                        is FirebaseTooManyRequestsException ->
+                            "Se realizaron demasiados intentos. " +
+                                    "Espera un momento y vuelve a intentarlo."
+
+                        is FirebaseNetworkException ->
+                            "No pudimos conectarnos. " +
+                                    "Revisa tu conexión a Internet."
+
+                        else ->
+                            "No pudimos procesar la solicitud. " +
+                                    "Inténtalo nuevamente."
+                    }
+
+                    _recuperacion.value = _recuperacion.value.copy(
+                        enviando = false,
+                        error = mensaje
+                    )
+                }
+            }
+        }
+    }
+
+    private fun completarSolicitudRecuperacion() {
+        _recuperacion.value = _recuperacion.value.copy(
+            enviando = false,
+            solicitudCompletada = true,
+            error = null
         )
     }
 

@@ -236,4 +236,9 @@ class AuthRepository {
             true
         }.await()
     }
+    // Función para enviar un enlace de recuperación de contraseña
+    suspend fun enviarRecuperacionContrasena(correo: String) {
+        auth.setLanguageCode("es")
+        auth.sendPasswordResetEmail(correo.trim()).await()
+    }
 }
