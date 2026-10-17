@@ -22,6 +22,8 @@ import com.example.proyectosportpro.features.auth.presentation.CompletarFechaScr
 import com.example.proyectosportpro.features.auth.presentation.LoginScreen
 import com.example.proyectosportpro.features.auth.presentation.LoginViewModel
 import com.example.proyectosportpro.features.auth.presentation.RegistroScreen
+import com.example.proyectosportpro.features.academia.presentation.AcademiasScreen
+import com.example.proyectosportpro.features.auth.domain.RolUsuario
 
 private object Rutas {
     const val INICIO = "inicio"
@@ -143,12 +145,24 @@ fun SportProNavigation(
                 !estado.requiereFechaNacimiento &&
                 !estado.cargando
             ) {
-                CuentaScreen(
-                    perfil = perfil,
-                    onCerrarSesion = {
-                        loginViewModel.cerrarSesion()
-                    }
-                )
+                if (
+                    perfil.rol == RolUsuario.ADM &&
+                    perfil.estado == "ACTIVO"
+                ) {
+                    AcademiasScreen(
+                        usuarioId = perfil.uid,
+                        onCerrarSesion = {
+                            loginViewModel.cerrarSesion()
+                        }
+                    )
+                } else {
+                    CuentaScreen(
+                        perfil = perfil,
+                        onCerrarSesion = {
+                            loginViewModel.cerrarSesion()
+                        }
+                    )
+                }
             }
         }
     }
