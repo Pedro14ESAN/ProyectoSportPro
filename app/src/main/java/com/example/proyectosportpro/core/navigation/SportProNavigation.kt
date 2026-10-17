@@ -24,6 +24,9 @@ import com.example.proyectosportpro.features.auth.presentation.LoginViewModel
 import com.example.proyectosportpro.features.auth.presentation.RegistroScreen
 import com.example.proyectosportpro.features.academia.presentation.AcademiasScreen
 import com.example.proyectosportpro.features.auth.domain.RolUsuario
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import com.example.proyectosportpro.features.academia.presentation.CategoriasScreen
 
 private object Rutas {
     const val INICIO = "inicio"
@@ -32,6 +35,8 @@ private object Rutas {
     const val COMPLETAR_FECHA = "completar_fecha"
     const val PERFIL_FALTANTE = "perfil_faltante"
     const val CUENTA = "cuenta"
+
+    const val CATEGORIAS = "categorias/{academiaId}"
 }
 
 @Composable
@@ -62,6 +67,11 @@ fun SportProNavigation(
 
             estado.requiereFechaNacimiento ->
                 Rutas.COMPLETAR_FECHA
+
+            estado.perfil?.rol == RolUsuario.ADM &&
+                    estado.perfil?.estado == "ACTIVO" &&
+                    rutaActual == Rutas.CATEGORIAS ->
+                Rutas.CATEGORIAS
 
             estado.perfil != null ->
                 Rutas.CUENTA
@@ -151,6 +161,11 @@ fun SportProNavigation(
                 ) {
                     AcademiasScreen(
                         usuarioId = perfil.uid,
+                        onVerCategorias = { academiaId ->
+                            navController.navigate("categorias/$academiaId") {
+                                launchSingleTop = true
+                            }
+                        },
                         onCerrarSesion = {
                             loginViewModel.cerrarSesion()
                         }
@@ -163,6 +178,30 @@ fun SportProNavigation(
                         }
                     )
                 }
+            }
+        }
+
+        composable(
+            route = Rutas.CATEGORIAS,
+            arguments = listOf(
+                navArgument("academiaId") {
+                    type = NavType.StringType
+                }
+            )
+        ) {
+            val perfil = estado.perfil
+
+            if (
+                perfil?.rol == RolUsuario.ADM &&
+                perfil.estado == "ACTIVO" &&
+                !estado.requiereFechaNacimiento &&
+                !estado.cargando
+            ) {
+                CategoriasScreen(
+                    onVolver = {
+                        navController.popBackStack()
+                    }
+                )
             }
         }
     }
