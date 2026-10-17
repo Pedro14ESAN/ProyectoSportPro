@@ -77,6 +77,74 @@ service cloud.firestore {
         && request.resource.data.fechaActualizacion == request.time;
 
       allow delete: if false;
+      match /categorias/{categoriaId} {
+
+        function puedeGestionarAcademia() {
+          return esAdministradorActivo()
+            && get(
+              /databases/$(database)/documents/academias/$(academiaId)
+            ).data.creadoPor == request.auth.uid;
+        }
+
+        function academiaActiva() {
+          return get(
+            /databases/$(database)/documents/academias/$(academiaId)
+          ).data.activa == true;
+        }
+
+        function nombreCategoriaValido() {
+          return request.resource.data.nombre is string
+            && request.resource.data.nombre.size() >= 2
+            && request.resource.data.nombre.size() <= 60;
+        }
+
+        allow get, list: if puedeGestionarAcademia();
+
+        allow create: if puedeGestionarAcademia()
+          && academiaActiva()
+          && request.resource.data.keys().hasAll([
+            'academiaId',
+            'nombre',
+            'activa',
+            'creadoPor',
+            'actualizadoPor',
+            'fechaCreacion',
+            'fechaActualizacion'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'academiaId',
+            'nombre',
+            'activa',
+            'creadoPor',
+            'actualizadoPor',
+            'fechaCreacion',
+            'fechaActualizacion'
+          ])
+          && request.resource.data.academiaId == academiaId
+          && nombreCategoriaValido()
+          && request.resource.data.activa == true
+          && request.resource.data.creadoPor == request.auth.uid
+          && request.resource.data.actualizadoPor == request.auth.uid
+          && request.resource.data.fechaCreacion == request.time
+          && request.resource.data.fechaActualizacion == request.time;
+
+        allow update: if puedeGestionarAcademia()
+          && academiaActiva()
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'nombre',
+                'activa',
+                'actualizadoPor',
+                'fechaActualizacion'
+              ])
+          && nombreCategoriaValido()
+          && request.resource.data.activa is bool
+          && request.resource.data.actualizadoPor == request.auth.uid
+          && request.resource.data.fechaActualizacion == request.time;
+
+        allow delete: if false;
+      }
     }
 
     match /users/{uid} {
@@ -139,8 +207,6 @@ service cloud.firestore {
       allow list, delete: if false;
     }
 
-    match /{document=**} {
-      allow read, write: if false;
-    }
+
   }
 }
