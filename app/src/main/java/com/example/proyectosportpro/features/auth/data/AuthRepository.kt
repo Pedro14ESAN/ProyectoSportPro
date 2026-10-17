@@ -6,6 +6,9 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
+import com.example.proyectosportpro.features.auth.domain.PoliticaRegistro
+import com.example.proyectosportpro.features.auth.domain.TipoRegistro
+
 
 import com.google.firebase.firestore.Source
 import java.time.LocalDate
@@ -240,5 +243,78 @@ class AuthRepository {
     suspend fun enviarRecuperacionContrasena(correo: String) {
         auth.setLanguageCode("es")
         auth.sendPasswordResetEmail(correo.trim()).await()
+    }
+
+    suspend fun completarPerfilPendiente(
+        nombre: String,
+        fechaNacimiento: LocalDate,
+        rol: RolUsuario,
+        aceptoTerminos: Boolean
+    ): PerfilUsuario {
+        val usuario = checkNotNull(auth.currentUser) {
+            "Debes iniciar sesión para completar tu perfil."
+        }
+
+        // Consulta al servidor. Un error de conexión no significa
+        // que el perfil no exista.
+        val perfilExistente = obtenerPerfilActual()
+
+        if (perfilExistente != null) {
+            return perfilExistente
+        }
+
+        val nombreLimpio = nombre.trim()
+
+        require(nombreLimpio.length in 2..100) {
+            "El nombre debe tener entre 2 y 100 caracteres."
+        }
+
+        require(rol in RolUsuario.rolesDeRegistro) {
+            "Selecciona un rol permitido."
+        }
+
+        require(aceptoTerminos) {
+            "Debes aceptar los términos y la política de privacidad."
+        }
+
+        val evaluacion = PoliticaRegistro.evaluar(
+            fechaNacimiento = fechaNacimiento,
+            rol = rol
+        )
+
+        // Conserva la política actual: el registro de menores
+        // seguirá bloqueado hasta implementar el flujo de apoderados.
+        require(evaluacion.tipo == TipoRegistro.ADULTO) {
+            evaluacion.mensaje
+        }
+
+        check(auth.currentUser?.uid == usuario.uid) {
+            "La sesión cambió. Vuelve a iniciar sesión."
+        }
+
+        val correo = checkNotNull(usuario.email) {
+            "La cuenta no tiene un correo asociado."
+        }
+
+        val perfil = PerfilUsuario(
+            uid = usuario.uid,
+            nombre = nombreLimpio,
+            correo = correo,
+            rol = rol,
+            fechaNacimiento = fechaNacimiento.toString(),
+            estado = "PENDIENTE_VINCULACION",
+            aceptoTerminos = aceptoTerminos
+        )
+
+        guardarPerfil(perfil)
+
+        check(auth.currentUser?.uid == usuario.uid) {
+            "La sesión cambió. Vuelve a iniciar sesión."
+        }
+
+        // Devuelve lo que realmente quedó guardado en el servidor.
+        return checkNotNull(obtenerPerfilActual()) {
+            "No se pudo confirmar el perfil. Vuelve a intentarlo."
+        }
     }
 }

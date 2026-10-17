@@ -1,5 +1,5 @@
 package com.example.proyectosportpro.core.navigation
-
+import com.example.proyectosportpro.features.auth.presentation.CompletarPerfilScreen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -125,18 +125,16 @@ fun SportProNavigation(
 
         composable(Rutas.PERFIL_FALTANTE) {
             if (estado.requiereCrearPerfil) {
-                MensajeAcceso(
-                    titulo = "Registro incompleto",
-                    mensaje = "Tu cuenta existe, pero falta crear su perfil. " +
-                            "La recuperación de este paso todavía está pendiente.",
-                    cargando = estado.cargando,
+                CompletarPerfilScreen(
+                    onPerfilCompletado = {
+                        loginViewModel.revisarSesion()
+                    },
                     onCerrarSesion = {
                         loginViewModel.cerrarSesion()
                     }
                 )
             }
         }
-
         composable(Rutas.CUENTA) {
             val perfil = estado.perfil
 
