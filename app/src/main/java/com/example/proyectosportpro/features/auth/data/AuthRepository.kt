@@ -97,6 +97,78 @@ class AuthRepository {
         }.await()
     }
 
+    suspend fun iniciarSesion(
+        correo: String,
+        contrasena: String
+    ) {
+        require(correo.isNotBlank() && contrasena.isNotBlank()) {
+            "Ingresa tu correo y contraseña."
+        }
+
+        auth.signInWithEmailAndPassword(
+            correo.trim(),
+            contrasena
+        ).await()
+    }
+
+    suspend fun obtenerPerfilActual(): PerfilUsuario? {
+        val usuario = checkNotNull(auth.currentUser) {
+            "No hay una sesión iniciada."
+        }
+
+        val documento = firestore.collection("users")
+            .document(usuario.uid)
+            .get(Source.SERVER)
+            .await()
+
+        // La cuenta puede existir en Authentication y todavía
+        // necesitar completar la creación de su perfil.
+        if (!documento.exists()) {
+            return null
+        }
+
+        check(documento.getString("uid") == usuario.uid) {
+            "El perfil no corresponde a la cuenta autenticada."
+        }
+
+        val nombre = checkNotNull(documento.getString("nombre")) {
+            "El perfil no tiene nombre."
+        }
+
+        val correo = checkNotNull(documento.getString("correo")) {
+            "El perfil no tiene correo."
+        }
+
+        val codigoRol = checkNotNull(documento.getString("rol")) {
+            "El perfil no tiene un rol registrado."
+        }
+
+        val rol = RolUsuario.entries.firstOrNull {
+            it.name == codigoRol
+        } ?: error("El perfil tiene un rol desconocido.")
+
+        val estado = checkNotNull(documento.getString("estado")) {
+            "El perfil no tiene un estado registrado."
+        }
+
+        val aceptoTerminos = checkNotNull(
+            documento.getBoolean("aceptoTerminos")
+        ) {
+            "El perfil no tiene registrada la aceptación de términos."
+        }
+
+        return PerfilUsuario(
+            uid = usuario.uid,
+            nombre = nombre,
+            correo = correo,
+            rol = rol,
+            fechaNacimiento = documento.getString("fechaNacimiento")
+                .orEmpty(),
+            estado = estado,
+            aceptoTerminos = aceptoTerminos
+        )
+    }
+
     fun obtenerUidActual(): String? {
         return auth.currentUser?.uid
     }
@@ -163,5 +235,10 @@ class AuthRepository {
 
             true
         }.await()
+    }
+    // Función para enviar un enlace de recuperación de contraseña
+    suspend fun enviarRecuperacionContrasena(correo: String) {
+        auth.setLanguageCode("es")
+        auth.sendPasswordResetEmail(correo.trim()).await()
     }
 }

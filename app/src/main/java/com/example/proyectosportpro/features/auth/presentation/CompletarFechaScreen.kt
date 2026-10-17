@@ -18,9 +18,15 @@ import java.time.LocalDate
 
 @Composable
 fun CompletarFechaScreen(
+    onFechaGuardada: () -> Unit,
     viewModel: CompletarFechaViewModel = viewModel()
 ) {
     val estado by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(estado.fechaGuardada) {
+        if (estado.fechaGuardada != null) {
+            onFechaGuardada()
+        }
+    }
 
     var fechaTexto by rememberSaveable { mutableStateOf("") }
     var fechaConfirmada by rememberSaveable { mutableStateOf(false) }
