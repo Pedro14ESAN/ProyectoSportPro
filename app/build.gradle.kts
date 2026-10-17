@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -51,4 +53,16 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+
+    // ViewModel para las pantallas de Compose.
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+
+// Permite observar el estado de la pantalla respetando su ciclo de vida.
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+
+// Permite esperar las operaciones de Firebase con corrutinas.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
 }

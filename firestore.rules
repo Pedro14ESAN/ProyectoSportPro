@@ -1,0 +1,75 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function esPropietario(uid) {
+      return request.auth != null
+        && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      allow get: if esPropietario(uid);
+
+      allow create: if esPropietario(uid)
+        && request.resource.data.keys().hasAll([
+          'uid',
+          'nombre',
+          'correo',
+          'rol',
+          'fechaNacimiento',
+          'edadVerificada',
+          'estado',
+          'fechaCreacion',
+          'aceptoTerminos'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'nombre',
+          'correo',
+          'rol',
+          'fechaNacimiento',
+          'edadVerificada',
+          'estado',
+          'fechaCreacion',
+          'aceptoTerminos'
+        ])
+        && request.resource.data.uid == uid
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() >= 2
+        && request.resource.data.nombre.size() <= 100
+        && request.resource.data.correo == request.auth.token.email
+        && request.resource.data.rol in ['JUG', 'PAD', 'DT']
+        && request.resource.data.fechaNacimiento is string
+        && request.resource.data.fechaNacimiento.matches(
+          '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+        )
+        && request.resource.data.edadVerificada == false
+        && request.resource.data.estado == 'PENDIENTE_VINCULACION'
+        && request.resource.data.fechaCreacion == request.time
+        && request.resource.data.aceptoTerminos == true;
+
+      allow update: if esPropietario(uid)
+        && resource.data.estado == 'PENDIENTE_VINCULACION'
+        && !('fechaNacimiento' in resource.data)
+        && resource.data.get('edadVerificada', false) == false
+        && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly(['fechaNacimiento', 'edadVerificada'])
+        && request.resource.data.keys().hasAll([
+          'fechaNacimiento', 'edadVerificada'
+        ])
+        && request.resource.data.fechaNacimiento is string
+        && request.resource.data.fechaNacimiento.matches(
+          '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+        )
+        && request.resource.data.edadVerificada == false;
+
+      allow list, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
