@@ -118,6 +118,108 @@ service cloud.firestore {
 
       allow delete: if false;
 
+      // SOLICITUDES DE VINCULACIÓN DEL DT
+      match /solicitudesVinculacion/{solicitanteUid} {
+        function esDtHabilitado() {
+          return esPropietario(solicitanteUid)
+            && get(/databases/$(database)/documents/users/$(solicitanteUid)).data.rol == 'DT'
+            && get(/databases/$(database)/documents/users/$(solicitanteUid)).data.estado
+              in ['PENDIENTE_VINCULACION', 'ACTIVO'];
+        }
+
+        // También permite consultar un documento propio aún inexistente,
+        // necesario para comprobar duplicados antes de crear la solicitud.
+        allow get: if esDtHabilitado() || administraAcademia();
+        allow list: if administraAcademia();
+
+        allow create: if esDtHabilitado()
+          && academiaActiva()
+          && request.resource.data.keys().hasAll([
+            'academiaId', 'solicitanteUid', 'nombreSolicitante',
+            'estado', 'fechaCreacion'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'academiaId', 'solicitanteUid', 'nombreSolicitante',
+            'estado', 'fechaCreacion'
+          ])
+          && request.resource.data.academiaId == academiaId
+          && request.resource.data.solicitanteUid == solicitanteUid
+          && request.resource.data.nombreSolicitante is string
+          && request.resource.data.nombreSolicitante.size() >= 2
+          && request.resource.data.nombreSolicitante.size() <= 100
+          && request.resource.data.nombreSolicitante ==
+            get(/databases/$(database)/documents/users/$(solicitanteUid)).data.nombre
+          && request.resource.data.estado == 'PENDIENTE'
+          && request.resource.data.fechaCreacion == request.time;
+
+        function perfilDtVigente() {
+          let perfil = get(/databases/$(database)/documents/users/$(solicitanteUid)).data;
+          return perfil.rol == 'DT'
+            && perfil.estado in ['PENDIENTE_VINCULACION', 'ACTIVO'];
+        }
+
+        function creaVinculoAlAprobar() {
+          let ruta = /databases/$(database)/documents/academias/$(academiaId)/miembros/$(solicitanteUid);
+          let vinculo = getAfter(ruta).data;
+          return !exists(ruta)
+            && vinculo.uid == solicitanteUid
+            && vinculo.academiaId == academiaId
+            && vinculo.rol == 'DT'
+            && vinculo.activo == true
+            && vinculo.creadoPor == request.auth.uid
+            && vinculo.fechaCreacion == request.time;
+        }
+
+        allow update: if administraAcademia()
+          && academiaActiva()
+          && resource.data.estado == 'PENDIENTE'
+          && resource.data.academiaId == academiaId
+          && resource.data.solicitanteUid == solicitanteUid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['estado', 'revisadoPor', 'fechaRevision'])
+          && request.resource.data.revisadoPor == request.auth.uid
+          && request.resource.data.fechaRevision == request.time
+          && (
+            request.resource.data.estado == 'RECHAZADA'
+            || (request.resource.data.estado == 'APROBADA'
+              && perfilDtVigente() && creaVinculoAlAprobar())
+          );
+        allow delete: if false;
+      }
+
+      // VÍNCULOS CON LA ACADEMIA: solo se crean al aprobar una solicitud.
+      match /miembros/{miembroUid} {
+        function aprobacionSimultanea() {
+          let ruta = /databases/$(database)/documents/academias/$(academiaId)/solicitudesVinculacion/$(miembroUid);
+          let antes = get(ruta).data;
+          let despues = getAfter(ruta).data;
+          return antes.estado == 'PENDIENTE'
+            && antes.solicitanteUid == miembroUid
+            && antes.academiaId == academiaId
+            && despues.estado == 'APROBADA'
+            && despues.revisadoPor == request.auth.uid
+            && despues.fechaRevision == request.time;
+        }
+
+        allow get: if esPropietario(miembroUid) || administraAcademia();
+        allow list: if administraAcademia();
+        allow create: if administraAcademia() && academiaActiva()
+          && request.resource.data.keys().hasAll([
+            'uid', 'academiaId', 'rol', 'activo', 'creadoPor', 'fechaCreacion'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'uid', 'academiaId', 'rol', 'activo', 'creadoPor', 'fechaCreacion'
+          ])
+          && request.resource.data.uid == miembroUid
+          && request.resource.data.academiaId == academiaId
+          && request.resource.data.rol == 'DT'
+          && request.resource.data.activo == true
+          && request.resource.data.creadoPor == request.auth.uid
+          && request.resource.data.fechaCreacion == request.time
+          && aprobacionSimultanea();
+        allow update, delete: if false;
+      }
+
       // CATEGORÍAS
 
       match /categorias/{categoriaId} {
