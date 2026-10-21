@@ -68,4 +68,7 @@ dependencies {
 
     // Navigation para Jetpack Compose.
     implementation("androidx.navigation:navigation-compose:2.10.2")
+
+    // Para usar iconos.
+    implementation("androidx.compose.material:material-icons-core")
 }

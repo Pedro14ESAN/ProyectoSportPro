@@ -21,19 +21,59 @@ service cloud.firestore {
         ).data.estado == 'ACTIVO';
     }
 
-    match /{document=**} {
-      allow read, write: if false;
-    }
     match /academias/{academiaId} {
 
-      function nombreValido() {
+      function administraAcademia() {
+        return esAdministradorActivo()
+          && get(
+            /databases/$(database)/documents/academias/$(academiaId)
+          ).data.creadoPor == request.auth.uid;
+      }
+
+      function academiaActiva() {
+        return get(
+          /databases/$(database)/documents/academias/$(academiaId)
+        ).data.activa == true;
+      }
+
+      function nombreAcademiaValido() {
         return request.resource.data.nombre is string
           && request.resource.data.nombre.size() >= 2
           && request.resource.data.nombre.size() <= 100;
       }
 
-      // En esta primera versión, cada administrador gestiona
-      // únicamente las academias que creó.
+      function nombreEquipoCorrecto(nombre) {
+        return nombre is string
+          && nombre.size() >= 2
+          && nombre.size() <= 60
+          && nombre.matches("^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 .'-]+$")
+          && nombre == nombre.trim().replace(' +', ' ');
+      }
+
+      function claveNombreEquipo(datos) {
+        return datos.categoriaId + '_' + datos.nombre.lower();
+      }
+
+      function reservaCorresponde(datos, equipoId) {
+        let clave = claveNombreEquipo(datos);
+
+        return getAfter(
+          /databases/$(database)/documents/academias/$(academiaId)/nombresEquipos/$(clave)
+        ).data.equipoId == equipoId;
+      }
+
+      function nombreAnteriorLiberado(antes, despues) {
+        let claveAnterior = claveNombreEquipo(antes);
+        let claveNueva = claveNombreEquipo(despues);
+
+        return claveAnterior == claveNueva
+          || !existsAfter(
+            /databases/$(database)/documents/academias/$(academiaId)/nombresEquipos/$(claveAnterior)
+          );
+      }
+
+      // ACADEMIAS
+
       allow get, list: if esAdministradorActivo()
         && resource.data.creadoPor == request.auth.uid;
 
@@ -54,7 +94,7 @@ service cloud.firestore {
           'fechaCreacion',
           'fechaActualizacion'
         ])
-        && nombreValido()
+        && nombreAcademiaValido()
         && request.resource.data.activa == true
         && request.resource.data.creadoPor == request.auth.uid
         && request.resource.data.actualizadoPor == request.auth.uid
@@ -71,126 +111,16 @@ service cloud.firestore {
               'actualizadoPor',
               'fechaActualizacion'
             ])
-        && nombreValido()
+        && nombreAcademiaValido()
         && request.resource.data.activa is bool
         && request.resource.data.actualizadoPor == request.auth.uid
         && request.resource.data.fechaActualizacion == request.time;
 
       allow delete: if false;
 
-      match /equipos/{equipoId} {
-
-        function administraAcademia() {
-          return esAdministradorActivo()
-            && get(
-              /databases/$(database)/documents/academias/$(academiaId)
-            ).data.creadoPor == request.auth.uid;
-        }
-
-        function academiaHabilitada() {
-          return get(
-            /databases/$(database)/documents/academias/$(academiaId)
-          ).data.activa == true;
-        }
-
-        function categoriaHabilitada() {
-          let categoriaId = request.resource.data.categoriaId;
-
-          return categoriaId is string
-            && categoriaId.matches('^[A-Za-z0-9_-]{1,128}$')
-            && exists(
-              /databases/$(database)/documents/academias/$(academiaId)/categorias/$(categoriaId)
-            )
-            && get(
-              /databases/$(database)/documents/academias/$(academiaId)/categorias/$(categoriaId)
-            ).data.activa == true;
-        }
-
-        function nombreEquipoValido() {
-          let nombre = request.resource.data.nombre;
-
-          return nombre is string
-            && nombre.size() >= 2
-            && nombre.size() <= 60
-            && nombre.matches("^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 .'-]+$")
-            && nombre == nombre.trim().replace(' +', ' ');
-        }
-
-        allow get, list: if administraAcademia();
-
-        allow create: if administraAcademia()
-          && academiaHabilitada()
-          && request.resource.data.keys().hasAll([
-            'academiaId',
-            'categoriaId',
-            'nombre',
-            'activo',
-            'creadoPor',
-            'actualizadoPor',
-            'fechaCreacion',
-            'fechaActualizacion',
-            'solicitudId'
-          ])
-          && request.resource.data.keys().hasOnly([
-            'academiaId',
-            'categoriaId',
-            'nombre',
-            'activo',
-            'creadoPor',
-            'actualizadoPor',
-            'fechaCreacion',
-            'fechaActualizacion',
-            'solicitudId'
-          ])
-          && request.resource.data.academiaId == academiaId
-          && categoriaHabilitada()
-          && nombreEquipoValido()
-          && equipoId == (
-            request.resource.data.categoriaId
-            + '_'
-            + request.resource.data.nombre.lower()
-          )
-          && request.resource.data.activo == true
-          && request.resource.data.creadoPor == request.auth.uid
-          && request.resource.data.actualizadoPor == request.auth.uid
-          && request.resource.data.fechaCreacion == request.time
-          && request.resource.data.fechaActualizacion == request.time
-          && request.resource.data.solicitudId is string
-          && request.resource.data.solicitudId.matches(
-            '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
-          );
-
-        // Por ahora solo permite activar o desactivar el equipo.
-        allow update: if administraAcademia()
-          && academiaHabilitada()
-          && request.resource.data.diff(resource.data)
-              .affectedKeys()
-              .hasOnly([
-                'activo',
-                'actualizadoPor',
-                'fechaActualizacion'
-              ])
-          && request.resource.data.activo is bool
-          && request.resource.data.actualizadoPor == request.auth.uid
-          && request.resource.data.fechaActualizacion == request.time;
-
-        allow delete: if false;
-      }
+      // CATEGORÍAS
 
       match /categorias/{categoriaId} {
-
-        function puedeGestionarAcademia() {
-          return esAdministradorActivo()
-            && get(
-              /databases/$(database)/documents/academias/$(academiaId)
-            ).data.creadoPor == request.auth.uid;
-        }
-
-        function academiaActiva() {
-          return get(
-            /databases/$(database)/documents/academias/$(academiaId)
-          ).data.activa == true;
-        }
 
         function nombreCategoriaValido() {
           return request.resource.data.nombre is string
@@ -198,9 +128,9 @@ service cloud.firestore {
             && request.resource.data.nombre.size() <= 60;
         }
 
-        allow get, list: if puedeGestionarAcademia();
+        allow get, list: if administraAcademia();
 
-        allow create: if puedeGestionarAcademia()
+        allow create: if administraAcademia()
           && academiaActiva()
           && request.resource.data.keys().hasAll([
             'academiaId',
@@ -228,7 +158,7 @@ service cloud.firestore {
           && request.resource.data.fechaCreacion == request.time
           && request.resource.data.fechaActualizacion == request.time;
 
-        allow update: if puedeGestionarAcademia()
+        allow update: if administraAcademia()
           && academiaActiva()
           && request.resource.data.diff(resource.data)
               .affectedKeys()
@@ -245,9 +175,158 @@ service cloud.firestore {
 
         allow delete: if false;
       }
+
+      // EQUIPOS
+
+      match /equipos/{equipoId} {
+
+        function categoriaHabilitada() {
+          let categoriaId = request.resource.data.categoriaId;
+
+          return categoriaId is string
+            && categoriaId.matches('^[A-Za-z0-9_-]{1,128}$')
+            && get(
+              /databases/$(database)/documents/academias/$(academiaId)/categorias/$(categoriaId)
+            ).data.activa == true;
+        }
+
+        function solicitudValida() {
+          let solicitud = request.resource.data.solicitudId;
+
+          return solicitud is string
+            && solicitud.matches(
+              '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+            );
+        }
+
+        allow get, list: if administraAcademia();
+
+        allow create: if administraAcademia()
+          && academiaActiva()
+          && request.resource.data.keys().hasAll([
+            'academiaId',
+            'categoriaId',
+            'nombre',
+            'activo',
+            'creadoPor',
+            'actualizadoPor',
+            'fechaCreacion',
+            'fechaActualizacion',
+            'solicitudId'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'academiaId',
+            'categoriaId',
+            'nombre',
+            'activo',
+            'creadoPor',
+            'actualizadoPor',
+            'fechaCreacion',
+            'fechaActualizacion',
+            'solicitudId'
+          ])
+          && request.resource.data.academiaId == academiaId
+          && categoriaHabilitada()
+          && nombreEquipoCorrecto(request.resource.data.nombre)
+          && solicitudValida()
+          && equipoId == request.resource.data.solicitudId
+          && request.resource.data.activo == true
+          && request.resource.data.creadoPor == request.auth.uid
+          && request.resource.data.actualizadoPor == request.auth.uid
+          && request.resource.data.fechaCreacion == request.time
+          && request.resource.data.fechaActualizacion == request.time
+          && reservaCorresponde(request.resource.data, equipoId);
+
+        allow update: if administraAcademia()
+          && academiaActiva()
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'nombre',
+                'activo',
+                'actualizadoPor',
+                'fechaActualizacion'
+              ])
+          && nombreEquipoCorrecto(request.resource.data.nombre)
+          && request.resource.data.activo is bool
+          && request.resource.data.actualizadoPor == request.auth.uid
+          && request.resource.data.fechaActualizacion == request.time
+          && (
+            request.resource.data.nombre == resource.data.nombre
+            || (
+              reservaCorresponde(request.resource.data, equipoId)
+              && nombreAnteriorLiberado(
+                resource.data,
+                request.resource.data
+              )
+            )
+          );
+
+        allow delete: if false;
+      }
+
+      // RESERVAS DE NOMBRES DE EQUIPOS
+
+      match /nombresEquipos/{clave} {
+
+        function equipoDestinoValido() {
+          let equipoId = request.resource.data.equipoId;
+          let equipo = getAfter(
+            /databases/$(database)/documents/academias/$(academiaId)/equipos/$(equipoId)
+          ).data;
+
+          return equipo.academiaId == academiaId
+            && nombreEquipoCorrecto(equipo.nombre)
+            && claveNombreEquipo(equipo) == clave;
+        }
+
+        // Evita duplicados con equipos del sistema anterior.
+        function sinConflictoAnterior() {
+          let equipoId = request.resource.data.equipoId;
+          let rutaAnterior =
+            /databases/$(database)/documents/academias/$(academiaId)/equipos/$(clave);
+
+          return clave == equipoId
+            || !existsAfter(rutaAnterior)
+            || claveNombreEquipo(
+              getAfter(rutaAnterior).data
+            ) != clave;
+        }
+
+        function seLiberaAlRenombrar() {
+          let equipoId = resource.data.equipoId;
+          let rutaEquipo =
+            /databases/$(database)/documents/academias/$(academiaId)/equipos/$(equipoId);
+
+          return claveNombreEquipo(get(rutaEquipo).data) == clave
+            && claveNombreEquipo(getAfter(rutaEquipo).data) != clave;
+        }
+
+        allow get: if administraAcademia();
+
+        allow create: if administraAcademia()
+          && academiaActiva()
+          && request.resource.data.keys().hasAll(['equipoId'])
+          && request.resource.data.keys().hasOnly(['equipoId'])
+          && request.resource.data.equipoId is string
+          && request.resource.data.equipoId.size() > 0
+          && request.resource.data.equipoId.size() <= 200
+          && request.resource.data.equipoId.matches('^[^/]+$')
+          && equipoDestinoValido()
+          && sinConflictoAnterior();
+
+        allow delete: if administraAcademia()
+          && academiaActiva()
+          && seLiberaAlRenombrar();
+
+        allow list, update: if false;
+      }
     }
 
+    // PERFILES DE USUARIOS
+
     match /users/{uid} {
+
       allow get: if esPropietario(uid);
 
       allow create: if esPropietario(uid)
@@ -294,9 +373,13 @@ service cloud.firestore {
         && resource.data.get('edadVerificada', false) == false
         && request.resource.data.diff(resource.data)
             .affectedKeys()
-            .hasOnly(['fechaNacimiento', 'edadVerificada'])
+            .hasOnly([
+              'fechaNacimiento',
+              'edadVerificada'
+            ])
         && request.resource.data.keys().hasAll([
-          'fechaNacimiento', 'edadVerificada'
+          'fechaNacimiento',
+          'edadVerificada'
         ])
         && request.resource.data.fechaNacimiento is string
         && request.resource.data.fechaNacimiento.matches(
@@ -307,6 +390,9 @@ service cloud.firestore {
       allow list, delete: if false;
     }
 
-
+    // El resto de las rutas permanece sin acceso.
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }

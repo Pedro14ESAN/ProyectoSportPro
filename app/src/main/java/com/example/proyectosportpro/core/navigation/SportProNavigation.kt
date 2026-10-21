@@ -1,13 +1,19 @@
 package com.example.proyectosportpro.core.navigation
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -22,312 +28,301 @@ import androidx.navigation.compose.rememberNavController
 import com.example.proyectosportpro.features.academia.presentation.AcademiasScreen
 import com.example.proyectosportpro.features.academia.presentation.CategoriasScreen
 import com.example.proyectosportpro.features.academia.presentation.EquiposScreen
-import com.example.proyectosportpro.features.auth.domain.PerfilUsuario
 import com.example.proyectosportpro.features.auth.domain.RolUsuario
 import com.example.proyectosportpro.features.auth.presentation.CompletarFechaScreen
 import com.example.proyectosportpro.features.auth.presentation.CompletarPerfilScreen
 import com.example.proyectosportpro.features.auth.presentation.LoginScreen
 import com.example.proyectosportpro.features.auth.presentation.LoginViewModel
 import com.example.proyectosportpro.features.auth.presentation.RegistroScreen
+import com.example.proyectosportpro.ui.theme.SportProColors
 
 private object Rutas {
-    const val INICIO = "inicio"
+    const val COMPROBANDO = "comprobando"
     const val LOGIN = "login"
     const val REGISTRO = "registro"
     const val COMPLETAR_FECHA = "completar_fecha"
     const val PERFIL_FALTANTE = "perfil_faltante"
-    const val CUENTA = "cuenta"
+    const val INICIO = "inicio"
+    const val ACADEMIAS = "academias"
+    const val PARTIDOS = "partidos"
+    const val COMUNIDAD = "comunidad"
+    const val PERFIL = "perfil"
     const val CATEGORIAS = "categorias/{academiaId}"
     const val EQUIPOS = "equipos/{academiaId}"
 }
 
-@Composable
-fun SportProNavigation(
-    loginViewModel: LoginViewModel = viewModel()
-) {
-    val navController = rememberNavController()
+private data class PestanaPrincipal(
+    val ruta: String,
+    val titulo: String,
+    val icono: ImageVector
+)
 
+private val pestanas = listOf(
+    PestanaPrincipal(Rutas.INICIO, "Inicio", Icons.Default.Home),
+    PestanaPrincipal(Rutas.ACADEMIAS, "Equipos", Icons.Default.List),
+    PestanaPrincipal(Rutas.PARTIDOS, "Partidos", Icons.Default.DateRange),
+    PestanaPrincipal(Rutas.COMUNIDAD, "Comunidad", Icons.Default.FavoriteBorder),
+    PestanaPrincipal(Rutas.PERFIL, "Perfil", Icons.Default.Person)
+)
+
+@Composable
+fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
+    val navController = rememberNavController()
     val estado by loginViewModel.uiState.collectAsStateWithLifecycle()
     val entrada by navController.currentBackStackEntryAsState()
     val rutaActual = entrada?.destination?.route
+    val perfil = estado.perfil
+
+    val accesoCompleto = estado.sesionRevisada && !estado.cargando &&
+            perfil != null && !estado.requiereCrearPerfil &&
+            !estado.requiereFechaNacimiento
+    val esAdministrador = accesoCompleto &&
+            perfil?.rol == RolUsuario.ADM && perfil.estado == "ACTIVO"
+    val rutasPrincipales = pestanas.map { it.ruta }
+    val rutasAdministracion = listOf(Rutas.CATEGORIAS, Rutas.EQUIPOS)
+    val mostrarBarra = accesoCompleto &&
+            (rutaActual in rutasPrincipales ||
+                    (esAdministrador && rutaActual in rutasAdministracion))
 
     LaunchedEffect(
-        estado.sesionRevisada,
-        estado.cargando,
-        estado.perfil,
-        estado.requiereCrearPerfil,
-        estado.requiereFechaNacimiento,
-        rutaActual
+        estado.sesionRevisada, estado.cargando, estado.perfil,
+        estado.requiereCrearPerfil, estado.requiereFechaNacimiento, rutaActual
     ) {
-        if (!estado.sesionRevisada || estado.cargando) {
-            return@LaunchedEffect
-        }
-
+        if (!estado.sesionRevisada || estado.cargando) return@LaunchedEffect
         val destino = when {
-            estado.requiereCrearPerfil ->
-                Rutas.PERFIL_FALTANTE
-
-            estado.requiereFechaNacimiento ->
-                Rutas.COMPLETAR_FECHA
-
-            estado.perfil?.rol == RolUsuario.ADM &&
-                    estado.perfil?.estado == "ACTIVO" &&
-                    rutaActual == Rutas.CATEGORIAS ->
-                Rutas.CATEGORIAS
-
-            estado.perfil?.rol == RolUsuario.ADM &&
-                    estado.perfil?.estado == "ACTIVO" &&
-                    rutaActual == Rutas.EQUIPOS ->
-                Rutas.EQUIPOS
-
-            estado.perfil != null ->
-                Rutas.CUENTA
-
-            rutaActual == Rutas.REGISTRO ->
-                Rutas.REGISTRO
-
-            else ->
-                Rutas.LOGIN
+            estado.requiereCrearPerfil -> Rutas.PERFIL_FALTANTE
+            estado.requiereFechaNacimiento -> Rutas.COMPLETAR_FECHA
+            perfil != null -> when {
+                rutaActual in rutasPrincipales -> checkNotNull(rutaActual)
+                esAdministrador && rutaActual in rutasAdministracion ->
+                    checkNotNull(rutaActual)
+                else -> Rutas.INICIO
+            }
+            rutaActual == Rutas.REGISTRO -> Rutas.REGISTRO
+            else -> Rutas.LOGIN
         }
-
         if (rutaActual != destino) {
             navController.navigate(destino) {
-                // Limpia las pantallas anteriores cuando cambia el acceso.
-                popUpTo(navController.graph.id) {
-                    inclusive = true
-                }
+                popUpTo(navController.graph.id) { inclusive = true }
                 launchSingleTop = true
             }
         }
     }
 
-    NavHost(
-        navController = navController,
-        startDestination = Rutas.INICIO
-    ) {
-        composable(Rutas.INICIO) {
-            MensajeAcceso(
-                titulo = "SportPro",
-                mensaje = "Comprobando tu sesión…",
-                cargando = true
-            )
-        }
-
-        composable(Rutas.LOGIN) {
-            LoginScreen(
-                viewModel = loginViewModel,
-                onCrearCuenta = {
-                    navController.navigate(Rutas.REGISTRO) {
-                        launchSingleTop = true
-                    }
-                }
-            )
-        }
-
-        composable(Rutas.REGISTRO) {
-            RegistroScreen(
-                onRegistroCompletado = {
-                    loginViewModel.revisarSesion()
-                }
-            )
-        }
-
-        composable(Rutas.COMPLETAR_FECHA) {
-            if (estado.requiereFechaNacimiento) {
-                CompletarFechaScreen(
-                    onFechaGuardada = {
-                        loginViewModel.revisarSesion()
-                    }
-                )
-            }
-        }
-
-        composable(Rutas.PERFIL_FALTANTE) {
-            if (estado.requiereCrearPerfil) {
-                CompletarPerfilScreen(
-                    onPerfilCompletado = {
-                        loginViewModel.revisarSesion()
-                    },
-                    onCerrarSesion = {
-                        loginViewModel.cerrarSesion()
-                    }
-                )
-            }
-        }
-
-        composable(Rutas.CUENTA) {
-            val perfil = estado.perfil
-
-            if (
-                perfil != null &&
-                !estado.requiereFechaNacimiento &&
-                !estado.cargando
-            ) {
-                if (
-                    perfil.rol == RolUsuario.ADM &&
-                    perfil.estado == "ACTIVO"
-                ) {
-                    AcademiasScreen(
-                        usuarioId = perfil.uid,
-                        onVerCategorias = { academiaId ->
-                            navController.navigate("categorias/$academiaId") {
-                                launchSingleTop = true
-                            }
-                        },
-                        onVerEquipos = { academiaId ->
-                            navController.navigate("equipos/$academiaId") {
-                                launchSingleTop = true
-                            }
-                        },
-                        onCerrarSesion = {
-                            loginViewModel.cerrarSesion()
-                        }
-                    )
-                } else {
-                    CuentaScreen(
-                        perfil = perfil,
-                        onCerrarSesion = {
-                            loginViewModel.cerrarSesion()
-                        }
-                    )
-                }
-            }
-        }
-
-        composable(
-            route = Rutas.CATEGORIAS,
-            arguments = listOf(
-                navArgument("academiaId") {
-                    type = NavType.StringType
-                }
-            )
-        ) {
-            val perfil = estado.perfil
-
-            if (
-                perfil?.rol == RolUsuario.ADM &&
-                perfil.estado == "ACTIVO" &&
-                !estado.requiereFechaNacimiento &&
-                !estado.cargando
-            ) {
-                CategoriasScreen(
-                    onVolver = {
-                        navController.popBackStack()
-                    }
-                )
-            }
-        }
-
-        composable(
-            route = Rutas.EQUIPOS,
-            arguments = listOf(
-                navArgument("academiaId") {
-                    type = NavType.StringType
-                }
-            )
-        ) { entradaEquipos ->
-            val perfil = estado.perfil
-            val academiaId = entradaEquipos.arguments
-                ?.getString("academiaId")
-
-            if (
-                perfil?.rol == RolUsuario.ADM &&
-                perfil.estado == "ACTIVO" &&
-                !estado.requiereFechaNacimiento &&
-                !estado.cargando &&
-                academiaId != null
-            ) {
-                EquiposScreen(
-                    onVolver = {
-                        navController.popBackStack()
-                    },
-                    onVerCategorias = {
-                        navController.navigate("categorias/$academiaId") {
-                            launchSingleTop = true
-                        }
-                    }
-                )
-            }
+    fun abrirPestana(ruta: String) {
+        if (rutaActual == ruta) return
+        navController.navigate(ruta) {
+            popUpTo(Rutas.INICIO) { inclusive = false }
+            launchSingleTop = true
         }
     }
-}
 
-@Composable
-private fun CuentaScreen(
-    perfil: PerfilUsuario,
-    onCerrarSesion: () -> Unit
-) {
-    val mensaje = if (perfil.estado == "PENDIENTE_VINCULACION") {
-        "Tu cuenta está pendiente de vinculación con una academia. " +
-                "Todavía no tienes acceso a sus equipos ni a sus datos."
-    } else {
-        "Tu cuenta está activa. Los módulos se habilitarán según " +
-                "tu rol y las relaciones autorizadas con la academia."
-    }
-
-    MensajeAcceso(
-        titulo = "Hola, ${perfil.nombre}",
-        mensaje = "Rol: ${perfil.rol.etiqueta}\n\n$mensaje",
-        onCerrarSesion = onCerrarSesion
+    val colores = lightColorScheme(
+        primary = SportProColors.Field,
+        onPrimary = SportProColors.Surface,
+        secondary = SportProColors.Navy,
+        secondaryContainer = SportProColors.SelectedGreen,
+        onSecondaryContainer = SportProColors.Navy,
+        background = SportProColors.Background,
+        onBackground = SportProColors.TextPrimary,
+        surface = SportProColors.Surface,
+        onSurface = SportProColors.TextPrimary,
+        error = SportProColors.Alert,
+        outline = SportProColors.Border
     )
+
+    MaterialTheme(colorScheme = colores) {
+        Scaffold(
+            containerColor = SportProColors.Background,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                if (mostrarBarra) {
+                    val seleccionada = when (rutaActual) {
+                        Rutas.CATEGORIAS, Rutas.EQUIPOS -> Rutas.ACADEMIAS
+                        else -> rutaActual
+                    }
+                    Column {
+                        HorizontalDivider(color = SportProColors.Border)
+                        NavigationBar(
+                            containerColor = SportProColors.Surface,
+                            tonalElevation = 0.dp
+                        ) {
+                            pestanas.forEach { pestana ->
+                                NavigationBarItem(
+                                    selected = seleccionada == pestana.ruta,
+                                    onClick = { abrirPestana(pestana.ruta) },
+                                    icon = {
+                                        Icon(pestana.icono, contentDescription = null,
+                                            modifier = Modifier.size(24.dp))
+                                    },
+                                    label = {
+                                        Text(pestana.titulo, fontSize = 10.sp, maxLines = 1)
+                                    },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = SportProColors.Field,
+                                        selectedTextColor = SportProColors.Field,
+                                        indicatorColor = SportProColors.SelectedGreen,
+                                        unselectedIconColor = SportProColors.TextSecondary,
+                                        unselectedTextColor = SportProColors.TextSecondary
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        ) { padding ->
+            NavHost(
+                navController = navController,
+                startDestination = Rutas.COMPROBANDO,
+                modifier = Modifier.fillMaxSize().padding(padding)
+                    .consumeWindowInsets(padding)
+            ) {
+                composable(Rutas.COMPROBANDO) {
+                    PantallaBase("SportPro") {
+                        CircularProgressIndicator()
+                        Text("Comprobando tu sesión…")
+                    }
+                }
+                composable(Rutas.LOGIN) {
+                    LoginScreen(
+                        viewModel = loginViewModel,
+                        onCrearCuenta = {
+                            navController.navigate(Rutas.REGISTRO) { launchSingleTop = true }
+                        }
+                    )
+                }
+                composable(Rutas.REGISTRO) {
+                    RegistroScreen(onRegistroCompletado = { loginViewModel.revisarSesion() })
+                }
+                composable(Rutas.COMPLETAR_FECHA) {
+                    if (estado.requiereFechaNacimiento) {
+                        CompletarFechaScreen(onFechaGuardada = { loginViewModel.revisarSesion() })
+                    }
+                }
+                composable(Rutas.PERFIL_FALTANTE) {
+                    if (estado.requiereCrearPerfil) {
+                        CompletarPerfilScreen(
+                            onPerfilCompletado = { loginViewModel.revisarSesion() },
+                            onCerrarSesion = { loginViewModel.cerrarSesion() }
+                        )
+                    }
+                }
+                composable(Rutas.INICIO) {
+                    if (accesoCompleto && perfil != null) {
+                        PantallaBase("Hola, ${perfil.nombre}") {
+                            Text(perfil.rol.etiqueta, color = SportProColors.Field,
+                                fontWeight = FontWeight.Bold)
+                            if (perfil.estado == "ACTIVO") {
+                                Text("Bienvenido a SportPro.")
+                                if (esAdministrador) {
+                                    Text("Gestiona tus academias, categorías y equipos.")
+                                    Button(
+                                        onClick = { abrirPestana(Rutas.ACADEMIAS) },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) { Text("Ver mis academias y equipos") }
+                                } else {
+                                    Text("El acceso a equipos se habilitará según tus asignaciones en la academia.")
+                                }
+                            } else {
+                                Text("Tu cuenta todavía no tiene acceso a los datos deportivos de una academia.")
+                                Text("Estado: ${perfil.estado}")
+                            }
+                        }
+                    }
+                }
+                composable(Rutas.ACADEMIAS) {
+                    if (accesoCompleto && perfil != null) {
+                        if (esAdministrador) {
+                            AcademiasScreen(
+                                usuarioId = perfil.uid,
+                                onVerCategorias = { id ->
+                                    navController.navigate("categorias/$id") { launchSingleTop = true }
+                                },
+                                onVerEquipos = { id ->
+                                    navController.navigate("equipos/$id") { launchSingleTop = true }
+                                },
+                                onCerrarSesion = { loginViewModel.cerrarSesion() }
+                            )
+                        } else {
+                            PantallaBase("Equipos") {
+                                Text(if (perfil.estado == "ACTIVO") {
+                                    "La vista de equipos asignados a tu cuenta está pendiente de implementar."
+                                } else {
+                                    "Necesitas una vinculación autorizada con una academia para acceder a sus equipos."
+                                })
+                            }
+                        }
+                    }
+                }
+                composable(Rutas.PARTIDOS) {
+                    if (accesoCompleto) {
+                        PantallaBase("Partidos") {
+                            Text("Esta sección está pendiente de implementar.")
+                            Text("Aquí aparecerán la programación y el seguimiento de los partidos.")
+                        }
+                    }
+                }
+                composable(Rutas.COMUNIDAD) {
+                    if (accesoCompleto) {
+                        PantallaBase("Comunidad") {
+                            Text("Esta sección está pendiente de implementar.")
+                            Text("Aquí aparecerán las publicaciones y novedades de la comunidad.")
+                        }
+                    }
+                }
+                composable(Rutas.PERFIL) {
+                    if (accesoCompleto && perfil != null) {
+                        PantallaBase("Mi perfil") {
+                            Text(perfil.nombre, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            Text("Rol: ${perfil.rol.etiqueta}")
+                            Text("Estado: ${perfil.estado}")
+                            HorizontalDivider(color = SportProColors.Border)
+                            Button(
+                                onClick = { loginViewModel.cerrarSesion() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Cerrar sesión") }
+                        }
+                    }
+                }
+                composable(
+                    Rutas.CATEGORIAS,
+                    arguments = listOf(navArgument("academiaId") { type = NavType.StringType })
+                ) {
+                    if (esAdministrador) {
+                        CategoriasScreen(onVolver = { navController.popBackStack() })
+                    }
+                }
+                composable(
+                    Rutas.EQUIPOS,
+                    arguments = listOf(navArgument("academiaId") { type = NavType.StringType })
+                ) { entradaEquipos ->
+                    val academiaId = entradaEquipos.arguments?.getString("academiaId")
+                    if (esAdministrador && academiaId != null) {
+                        EquiposScreen(
+                            onVolver = { navController.popBackStack() },
+                            onVerCategorias = {
+                                navController.navigate("categorias/$academiaId") { launchSingleTop = true }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
-private fun MensajeAcceso(
-    titulo: String,
-    mensaje: String,
-    cargando: Boolean = false,
-    onCerrarSesion: (() -> Unit)? = null
-) {
+private fun PantallaBase(titulo: String, contenido: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF102E3C))
-            .safeDrawingPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
+        modifier = Modifier.fillMaxSize().safeDrawingPadding()
+            .verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Text(
-            text = "SPORTPRO",
-            color = Color(0xFFB1F568),
-            fontSize = 32.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = Color.White,
-                contentColor = Color(0xFF17252D)
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = titulo,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Text(mensaje)
-
-                if (cargando) {
-                    CircularProgressIndicator()
-                }
-
-                onCerrarSesion?.let { cerrar ->
-                    Button(
-                        onClick = cerrar,
-                        enabled = !cargando,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Cerrar sesión")
-                    }
-                }
-            }
-        }
+        Text("SPORTPRO", color = SportProColors.Navy,
+            fontFamily = FontFamily.Serif, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp)
+        Text(titulo, color = SportProColors.Navy,
+            fontFamily = FontFamily.Serif, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp)
+        contenido()
     }
 }

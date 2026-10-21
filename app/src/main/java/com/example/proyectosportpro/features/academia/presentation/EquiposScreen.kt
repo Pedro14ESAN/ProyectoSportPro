@@ -206,7 +206,7 @@ fun EquiposScreen(
                         nombre = equipo.nombre,
                         categoria = categoria?.nombre ?: "Categoría no disponible",
                         activo = equipo.activo,
-                        onClick = { detalle = equipo }
+                        onClick = { viewModel.limpiarAvisos(); detalle = equipo }
                     )
                 }
 
@@ -346,87 +346,80 @@ fun EquiposScreen(
         }
 
         detalle?.let { seleccionado ->
-            val equipo = estado.equipos.firstOrNull {
-                it.id == seleccionado.id
-            }
-
+            val equipo = estado.equipos.firstOrNull { it.id == seleccionado.id }
             if (equipo != null) {
-                val categoria = estado.categorias.firstOrNull {
-                    it.id == equipo.categoriaId
+                val categoria = estado.categorias.firstOrNull { it.id == equipo.categoriaId }
+                var nombreEditado by remember(equipo.id, equipo.nombre) {
+                    mutableStateOf(equipo.nombre)
                 }
-
+                val normalizado = nombreEditado.trim().replace(Regex(" +"), " ")
+                val hayCambios = normalizado != equipo.nombre
+                val ocupado = estado.guardando || estado.cargando || estado.solicitudPendiente
                 AlertDialog(
-                    onDismissRequest = {
-                        if (!estado.guardando) detalle = null
-                    },
+                    onDismissRequest = { if (!estado.guardando) detalle = null },
                     containerColor = SportProColors.Surface,
                     titleContentColor = SportProColors.Navy,
                     textContentColor = SportProColors.TextSecondary,
                     title = {
-                        Text(
-                            text = equipo.nombre,
-                            fontFamily = FontFamily.Serif,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text("Gestionar equipo", fontFamily = FontFamily.Serif,
+                            fontWeight = FontWeight.Bold)
                     },
                     text = {
                         Column(
+                            modifier = Modifier.heightIn(max = 420.dp)
+                                .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Text(
-                                "Categoría: ${categoria?.nombre ?: "No disponible"}"
+                            OutlinedTextField(
+                                value = nombreEditado,
+                                onValueChange = { nombreEditado = it; viewModel.limpiarAvisos() },
+                                label = { Text("Nombre del equipo") },
+                                enabled = !ocupado,
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
                             )
-                            Text(
-                                "Estado: ${if (equipo.activo) "Activo" else "Inactivo"}"
-                            )
-                            Text(
-                                if (equipo.activo) {
-                                    "Al desactivarlo dejará de aparecer en Activos. " +
-                                            "Su información e historial se conservarán."
-                                } else {
-                                    "Al reactivarlo volverá a aparecer en Activos."
-                                }
-                            )
-
-                            estado.error?.let {
-                                Text(it, color = SportProColors.Alert)
+                            Text("Categoría: " + (categoria?.nombre ?: "No disponible"))
+                            Text("Estado: " + if (equipo.activo) "Activo" else "Inactivo")
+                            HorizontalDivider()
+                            Text(if (equipo.activo) {
+                                "Puedes desactivar el equipo conservando su información e historial."
+                            } else {
+                                "Puedes reactivarlo para que vuelva a aparecer en Activos."
+                            })
+                            OutlinedButton(
+                                enabled = !ocupado && !hayCambios,
+                                onClick = {
+                                    viewModel.cambiarEstadoEquipo(equipo.id, !equipo.activo)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    if (equipo.activo) "Desactivar equipo" else "Reactivar equipo",
+                                    color = if (equipo.activo) SportProColors.Alert else SportProColors.Field
+                                )
                             }
-
+                            if (hayCambios) {
+                                Text("Guarda el nombre o restaura el anterior antes de cambiar el estado.",
+                                    fontSize = 12.sp)
+                            }
+                            estado.error?.let { Text(it, color = SportProColors.Alert) }
+                            estado.mensaje?.let { Text(it, color = SportProColors.Field) }
                             if (estado.guardando) {
                                 CircularProgressIndicator()
-                                Text("Actualizando estado…")
+                                Text("Guardando cambios…")
                             }
                         }
                     },
                     confirmButton = {
                         TextButton(
-                            enabled = !estado.guardando && !estado.cargando,
+                            enabled = !ocupado && hayCambios,
                             onClick = {
-                                viewModel.cambiarEstadoEquipo(
-                                    equipoId = equipo.id,
-                                    activo = !equipo.activo
-                                )
+                                viewModel.editarNombreEquipo(equipo.id, equipo.nombre, nombreEditado)
                             }
-                        ) {
-                            Text(
-                                text = if (equipo.activo) {
-                                    "Desactivar equipo"
-                                } else {
-                                    "Reactivar equipo"
-                                },
-                                color = if (equipo.activo) {
-                                    SportProColors.Alert
-                                } else {
-                                    SportProColors.Field
-                                }
-                            )
-                        }
+                        ) { Text("Guardar nombre") }
                     },
                     dismissButton = {
-                        TextButton(
-                            enabled = !estado.guardando,
-                            onClick = { detalle = null }
-                        ) {
+                        TextButton(enabled = !estado.guardando, onClick = { detalle = null }) {
                             Text("Cerrar")
                         }
                     }

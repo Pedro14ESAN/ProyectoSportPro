@@ -61,26 +61,18 @@ class EquipoRepository {
     ): String {
         validarId(academiaId)
         validarId(categoriaId)
-
-        require(
-            solicitudId.matches(
-                Regex(
-                    "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-" +
-                            "[a-f0-9]{4}-[a-f0-9]{12}$"
-                )
-            )
-        ) {
-            "La solicitud no es válida."
-        }
+        require(solicitudId.matches(Regex(
+            "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        ))) { "La solicitud no es válida." }
 
         val uid = obtenerUid()
         val nombreLimpio = normalizarNombre(nombre)
-
-        val equipoId = categoriaId + "_" +
-                nombreLimpio.lowercase(Locale.ROOT)
-
-        val referencia = equipos(academiaId).document(equipoId)
-
+        val claveNombre = categoriaId + "_" + nombreLimpio.lowercase(Locale.ROOT)
+        val equipoId = solicitudId
+        val equipoRef = equipos(academiaId).document(equipoId)
+        val reservaRef = firestore.collection("academias").document(academiaId)
+            .collection("nombresEquipos").document(claveNombre)
+        val anteriorRef = equipos(academiaId).document(claveNombre)
         val datos = mapOf(
             "academiaId" to academiaId,
             "categoriaId" to categoriaId,
@@ -92,29 +84,99 @@ class EquipoRepository {
             "fechaActualizacion" to FieldValue.serverTimestamp(),
             "solicitudId" to solicitudId
         )
+        return firestore.runTransaction { tx ->
+            val existente = tx.get(equipoRef)
+            val anterior = tx.get(anteriorRef)
+            val reserva = tx.get(reservaRef)
+            when {
+                existente.exists() -> {
+                    require(existente.getString("solicitudId") == solicitudId &&
+                            existente.getString("creadoPor") == uid &&
+                            existente.getString("academiaId") == academiaId &&
+                            existente.getString("categoriaId") == categoriaId
+                    ) { "La solicitud no corresponde a este equipo." }
+                    equipoId
+                }
+                anterior.exists() &&
+                        anterior.getString("solicitudId") == solicitudId &&
+                        anterior.getString("creadoPor") == uid -> anterior.id
+                else -> {
+                    val ocupado = anterior.exists() &&
+                            anterior.getString("nombre")?.lowercase(Locale.ROOT) ==
+                            nombreLimpio.lowercase(Locale.ROOT)
+                    require(!reserva.exists() && !ocupado) {
+                        "Ya existe un equipo con ese nombre en esta categoría. " +
+                                "Revisa también los equipos inactivos."
+                    }
+                    tx.set(equipoRef, datos)
+                    tx.set(reservaRef, mapOf("equipoId" to equipoId))
+                    equipoId
+                }
+            }
+        }.await()
+    }
 
-        firestore.runTransaction { transaccion ->
-            val existente = transaccion.get(referencia)
+    suspend fun editarNombreEquipo(
+        academiaId: String,
+        equipoId: String,
+        nombreAnterior: String,
+        nuevoNombre: String
+    ) {
+        validarId(academiaId)
+        require(equipoId.isNotBlank() && !equipoId.contains("/")) {
+            "El identificador del equipo no es válido."
+        }
+        val uid = obtenerUid()
+        val nombreLimpio = normalizarNombre(nuevoNombre)
+        val equipoRef = equipos(academiaId).document(equipoId)
+        val nombresRef = firestore.collection("academias").document(academiaId)
+            .collection("nombresEquipos")
 
-            if (existente.exists()) {
-                // Repetir la misma solicitud confirma el resultado.
-                // Una solicitud diferente representa un duplicado.
-                val mismaSolicitud =
-                    existente.getString("solicitudId") == solicitudId &&
-                            existente.getString("creadoPor") == uid
-
-                require(mismaSolicitud) {
+        firestore.runTransaction { tx ->
+            val documento = tx.get(equipoRef)
+            require(documento.exists()) { "El equipo ya no está disponible." }
+            require(documento.getString("academiaId") == academiaId) {
+                "El equipo no corresponde a esta academia."
+            }
+            val categoriaId = checkNotNull(documento.getString("categoriaId"))
+            val nombreActual = checkNotNull(documento.getString("nombre"))
+            if (nombreActual != nombreLimpio) {
+                require(nombreActual == nombreAnterior) {
+                    "El nombre cambió desde que abriste el formulario. " +
+                            "Actualiza la lista y vuelve a intentarlo."
+                }
+                val claveAnterior = categoriaId + "_" + nombreActual.lowercase(Locale.ROOT)
+                val claveNueva = categoriaId + "_" + nombreLimpio.lowercase(Locale.ROOT)
+                val nuevaRef = nombresRef.document(claveNueva)
+                val nueva = tx.get(nuevaRef)
+                require(!nueva.exists() || nueva.getString("equipoId") == equipoId) {
                     "Ya existe un equipo con ese nombre en esta categoría. " +
                             "Revisa también los equipos inactivos."
                 }
-            } else {
-                transaccion.set(referencia, datos)
+                val legado = tx.get(equipos(academiaId).document(claveNueva))
+                require(!(legado.exists() && legado.id != equipoId &&
+                        legado.getString("nombre")?.lowercase(Locale.ROOT) ==
+                        nombreLimpio.lowercase(Locale.ROOT))) {
+                    "Ya existe un equipo con ese nombre en esta categoría. " +
+                            "Revisa también los equipos inactivos."
+                }
+                val anteriorRef = nombresRef.document(claveAnterior)
+                val anterior = if (claveAnterior != claveNueva) tx.get(anteriorRef) else null
+
+                // Todas las lecturas preceden a las escrituras.
+                if (!nueva.exists()) tx.set(nuevaRef, mapOf("equipoId" to equipoId))
+                tx.update(equipoRef, mapOf(
+                    "nombre" to nombreLimpio,
+                    "actualizadoPor" to uid,
+                    "fechaActualizacion" to FieldValue.serverTimestamp()
+                ))
+                if (anterior != null && anterior.exists() &&
+                    anterior.getString("equipoId") == equipoId) {
+                    tx.delete(anteriorRef)
+                }
             }
-
-            equipoId
+            true
         }.await()
-
-        return equipoId
     }
 
     suspend fun cambiarEstadoEquipo(
