@@ -385,6 +385,49 @@ class EquiposViewModel(
         }
     }
 
+    fun limpiarAvisos() {
+        if (_uiState.value.guardando) return
+        _uiState.value = _uiState.value.copy(error = null, mensaje = null)
+    }
+
+    fun editarNombreEquipo(
+        equipoId: String,
+        nombreAnterior: String,
+        nuevoNombre: String
+    ) {
+        val actual = _uiState.value
+        if (actual.guardando || actual.cargando ||
+            actual.solicitudPendiente || actual.formularioAbierto) return
+        if (actual.equipos.none { it.id == equipoId }) return
+        val limpio = nuevoNombre.trim().replace(Regex(" +"), " ")
+        _uiState.value = actual.copy(guardando = true, error = null, mensaje = null)
+        viewModelScope.launch {
+            try {
+                withTimeout(20_000) {
+                    equipoRepository.editarNombreEquipo(
+                        academiaId, equipoId, nombreAnterior, limpio
+                    )
+                }
+                _uiState.value = _uiState.value.copy(
+                    guardando = false,
+                    equipos = _uiState.value.equipos.map {
+                        if (it.id == equipoId) it.copy(nombre = limpio) else it
+                    }.sortedBy { it.nombre.lowercase(java.util.Locale.ROOT) },
+                    mensaje = "Nombre actualizado correctamente."
+                )
+            } catch (e: TimeoutCancellationException) {
+                mostrarError("No pudimos confirmar el cambio. Cierra esta ventana " +
+                        "y pulsa Actualizar antes de continuar.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val validacion = generateSequence<Throwable>(e) { it.cause }
+                    .take(10).filterIsInstance<IllegalArgumentException>().firstOrNull()
+                mostrarError(validacion?.message ?: mensajeError(e))
+            }
+        }
+    }
+
     private fun limpiarSolicitud() {
         savedStateHandle.remove<String>("solicitudId")
         savedStateHandle.remove<String>("categoriaSeleccionadaId")
