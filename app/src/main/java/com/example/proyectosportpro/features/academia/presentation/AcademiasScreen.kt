@@ -8,7 +8,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontFamily
+import com.example.proyectosportpro.ui.theme.SportProColors
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,13 +30,13 @@ fun AcademiasScreen(
     )
     val estado by academiaViewModel.uiState.collectAsStateWithLifecycle()
 
-    val azul = Color(0xFF102E3C)
-    val verde = Color(0xFFB1F568)
+    val azul = SportProColors.Navy
+    val verde = SportProColors.Field
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(azul)
+            .background(SportProColors.Background)
             .safeDrawingPadding()
             .imePadding()
             .verticalScroll(rememberScrollState())
@@ -42,23 +45,27 @@ fun AcademiasScreen(
     ) {
         Text(
             text = "SPORTPRO",
-            color = verde,
-            fontSize = 30.sp,
+            color = azul,
+            fontFamily = FontFamily.Serif,
+            fontSize = 24.sp,
             fontWeight = FontWeight.ExtraBold
         )
 
         Text(
-            text = "Gestión de academias",
-            color = Color.White,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
+            text = "Academias",
+            color = azul,
+            fontFamily = FontFamily.Serif,
+            fontSize = 30.sp,
+            fontWeight = FontWeight.ExtraBold
         )
 
         Card(
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, SportProColors.Border),
             colors = CardDefaults.cardColors(
-                containerColor = Color.White,
-                contentColor = Color(0xFF17252D)
+                containerColor = SportProColors.Surface,
+                contentColor = SportProColors.TextPrimary
             )
         ) {
             Column(
@@ -90,16 +97,16 @@ fun AcademiasScreen(
                 estado.error?.let {
                     Text(
                         text = it,
-                        color = MaterialTheme.colorScheme.error
+                        color = SportProColors.Alert
                     )
                 }
 
                 estado.mensaje?.let {
-                    Text(it)
+                    Text(it, color = SportProColors.Field)
                 }
 
                 if (estado.cargando) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = SportProColors.Field)
                     Text("Consultando el servidor…")
                 }
 
@@ -108,9 +115,10 @@ fun AcademiasScreen(
                     enabled = !estado.cargando &&
                             estado.nombre.trim().length in 2..100,
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = verde,
-                        contentColor = azul
+                        contentColor = SportProColors.Surface
                     )
                 ) {
                     Text(
@@ -130,7 +138,7 @@ fun AcademiasScreen(
                     Text("Actualizar")
                 }
 
-                HorizontalDivider()
+                HorizontalDivider(color = SportProColors.Border)
 
                 Text(
                     text = "Mis academias",
@@ -146,7 +154,13 @@ fun AcademiasScreen(
 
                 estado.academias.forEach { academia ->
                     OutlinedCard(
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.dp, SportProColors.Border),
+                        colors = CardDefaults.outlinedCardColors(
+                            containerColor = SportProColors.Surface,
+                            contentColor = SportProColors.TextPrimary
+                        )
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
