@@ -1,5 +1,7 @@
 package com.example.proyectosportpro.features.academia.domain
 
+import com.example.proyectosportpro.features.auth.domain.RolUsuario
+
 enum class EstadoSolicitudVinculacion {
     PENDIENTE,
     APROBADA,
@@ -12,5 +14,6 @@ data class SolicitudVinculacion(
     val solicitanteUid: String,
     val nombreSolicitante: String,
     val estado: EstadoSolicitudVinculacion,
-    val revisadoPor: String? = null
+    val revisadoPor: String? = null,
+    val rolSolicitante: RolUsuario = RolUsuario.DT
 )

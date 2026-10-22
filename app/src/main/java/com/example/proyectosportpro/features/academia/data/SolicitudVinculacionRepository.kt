@@ -2,6 +2,7 @@ package com.example.proyectosportpro.features.academia.data
 
 import com.example.proyectosportpro.features.academia.domain.EstadoSolicitudVinculacion
 import com.example.proyectosportpro.features.academia.domain.SolicitudVinculacion
+import com.example.proyectosportpro.features.auth.domain.RolUsuario
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
@@ -48,8 +49,13 @@ class SolicitudVinculacionRepository {
                 "No encontramos tu perfil."
             }
 
-            require(perfil.getString("rol") == "DT") {
-                "Esta solicitud está disponible para directores técnicos."
+            comprobarSesion(uid)
+            check(perfil.getString("uid") == uid) {
+                "El perfil no corresponde a tu cuenta."
+            }
+            val rol = perfil.getString("rol")
+            require(rol in listOf("DT", "JUG")) {
+                "Esta solicitud está disponible para jugadores y directores técnicos."
             }
 
             require(
@@ -68,6 +74,11 @@ class SolicitudVinculacionRepository {
             }
 
             if (existente.exists()) {
+                check(existente.getString("academiaId") == academiaId &&
+                        existente.getString("solicitanteUid") == uid &&
+                        leerRolSolicitud(existente).name == rol) {
+                    "La solicitud existente no corresponde a tu cuenta o rol."
+                }
                 when (existente.getString("estado")) {
                     "PENDIENTE" -> {
                         // Un reintento de la misma solicitud no la duplica.
@@ -94,11 +105,13 @@ class SolicitudVinculacionRepository {
                     "academiaId" to academiaId,
                     "solicitanteUid" to uid,
                     "nombreSolicitante" to nombre,
+                    "rolSolicitante" to rol,
                     "estado" to EstadoSolicitudVinculacion.PENDIENTE.name,
                     "fechaCreacion" to FieldValue.serverTimestamp()
                 )
             )
         }.await()
+        comprobarSesion(uid)
     }
 
     suspend fun obtenerMiSolicitud(
@@ -106,11 +119,13 @@ class SolicitudVinculacionRepository {
     ): SolicitudVinculacion? {
         validarAcademiaId(academiaId)
 
+        val uid = obtenerUid()
         val documento = solicitudes(academiaId)
-            .document(obtenerUid())
+            .document(uid)
             .get(Source.SERVER)
             .await()
 
+        comprobarSesion(uid)
         if (!documento.exists()) return null
 
         return convertirSolicitud(documento, academiaId)
@@ -120,13 +135,14 @@ class SolicitudVinculacionRepository {
         academiaId: String
     ): List<SolicitudVinculacion> {
         validarAcademiaId(academiaId)
-        obtenerUid()
+        val uid = obtenerUid()
 
         // Las reglas limitarán esta consulta al administrador propietario.
         val resultado = solicitudes(academiaId)
             .get(Source.SERVER)
             .await()
 
+        comprobarSesion(uid)
         return resultado.documents
             .map { convertirSolicitud(it, academiaId) }
             .sortedWith(
@@ -154,6 +170,7 @@ class SolicitudVinculacionRepository {
         val destino = if (aprobar) "APROBADA" else "RECHAZADA"
 
         firestore.runTransaction { transaction ->
+            comprobarSesion(administradorUid)
             val solicitud = transaction.get(solicitudRef)
             val miembro = if (aprobar) transaction.get(miembroRef) else null
             check(solicitud.exists()) { "La solicitud ya no existe." }
@@ -161,10 +178,13 @@ class SolicitudVinculacionRepository {
                     solicitud.getString("solicitanteUid") == solicitanteUid) {
                 "Los datos de la solicitud no son válidos."
             }
+            val rol = leerRolSolicitud(solicitud)
             val estado = solicitud.getString("estado")
             if (estado == destino) {
                 check(!aprobar || (miembro?.getBoolean("activo") == true &&
-                        miembro.getString("rol") == "DT")) {
+                        miembro.getString("rol") == rol.name &&
+                        miembro.getString("uid") == solicitanteUid &&
+                        miembro.getString("academiaId") == academiaId)) {
                     "La solicitud ya fue aprobada, pero el vínculo no está activo."
                 }
                 return@runTransaction
@@ -179,7 +199,7 @@ class SolicitudVinculacionRepository {
                 transaction.set(miembroRef, mapOf(
                     "uid" to solicitanteUid,
                     "academiaId" to academiaId,
-                    "rol" to "DT",
+                    "rol" to rol.name,
                     "activo" to true,
                     "creadoPor" to administradorUid,
                     "fechaCreacion" to FieldValue.serverTimestamp()
@@ -191,6 +211,28 @@ class SolicitudVinculacionRepository {
                 "fechaRevision" to FieldValue.serverTimestamp()
             ))
         }.await()
+        comprobarSesion(administradorUid)
+    }
+
+    private fun comprobarSesion(uid: String) {
+        check(auth.currentUser?.uid == uid) {
+            "La sesión cambió. Vuelve a abrir esta pantalla."
+        }
+    }
+
+    private fun leerRolSolicitud(documento: DocumentSnapshot): RolUsuario {
+        // Las solicitudes creadas antes de incorporar jugadores eran de DT.
+        // Solo la ausencia del campo admite ese valor heredado.
+        val codigo = if (documento.contains("rolSolicitante")) {
+            documento.getString("rolSolicitante")
+        } else {
+            "DT"
+        }
+        return when (codigo) {
+            "DT" -> RolUsuario.DT
+            "JUG" -> RolUsuario.JUG
+            else -> error("La solicitud tiene un rol no permitido.")
+        }
     }
 
     private fun convertirSolicitud(
@@ -224,7 +266,8 @@ class SolicitudVinculacionRepository {
                 "La solicitud no tiene un nombre."
             },
             estado = estado,
-            revisadoPor = documento.getString("revisadoPor")
+            revisadoPor = documento.getString("revisadoPor"),
+            rolSolicitante = leerRolSolicitud(documento)
         )
     }
 }

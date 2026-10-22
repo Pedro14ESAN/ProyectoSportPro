@@ -29,6 +29,7 @@ import com.example.proyectosportpro.features.academia.presentation.AcademiasScre
 import com.example.proyectosportpro.features.academia.presentation.CategoriasScreen
 import com.example.proyectosportpro.features.academia.presentation.EquiposScreen
 import com.example.proyectosportpro.features.academia.presentation.MisEquiposScreen
+import com.example.proyectosportpro.features.academia.presentation.SolicitudVinculacionScreen
 import com.example.proyectosportpro.features.academia.presentation.SolicitudesAdminScreen
 import com.example.proyectosportpro.features.auth.domain.RolUsuario
 import com.example.proyectosportpro.features.auth.presentation.CompletarFechaScreen
@@ -256,6 +257,12 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                             perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION")
                         ) {
                             MisEquiposScreen(usuarioId = perfil.uid, nombreUsuario = perfil.nombre)
+                        } else if (perfil.rol == RolUsuario.JUG &&
+                            perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION")) {
+                            SolicitudVinculacionScreen(
+                                usuarioId = perfil.uid,
+                                esJugador = true
+                            )
                         } else {
                             PantallaBase("Equipos") {
                                 Text(if (perfil.estado == "ACTIVO") {

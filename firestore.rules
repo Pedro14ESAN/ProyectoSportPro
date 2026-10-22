@@ -143,32 +143,35 @@ service cloud.firestore {
 
       allow delete: if false;
 
-      // SOLICITUDES DE VINCULACIÓN DEL DT
+      // SOLICITUDES DE VINCULACIÓN DE DT Y JUGADORES
       match /solicitudesVinculacion/{solicitanteUid} {
-        function esDtHabilitado() {
+        function esSolicitanteHabilitado() {
           return esPropietario(solicitanteUid)
-            && get(/databases/$(database)/documents/users/$(solicitanteUid)).data.rol == 'DT'
+            && get(/databases/$(database)/documents/users/$(solicitanteUid)).data.rol in ['DT', 'JUG']
             && get(/databases/$(database)/documents/users/$(solicitanteUid)).data.estado
               in ['PENDIENTE_VINCULACION', 'ACTIVO'];
         }
 
         // También permite consultar un documento propio aún inexistente,
         // necesario para comprobar duplicados antes de crear la solicitud.
-        allow get: if esDtHabilitado() || administraAcademia();
+        allow get: if esSolicitanteHabilitado() || administraAcademia();
         allow list: if administraAcademia();
 
-        allow create: if esDtHabilitado()
+        allow create: if esSolicitanteHabilitado()
           && academiaActiva()
           && request.resource.data.keys().hasAll([
             'academiaId', 'solicitanteUid', 'nombreSolicitante',
-            'estado', 'fechaCreacion'
+            'estado', 'fechaCreacion', 'rolSolicitante'
           ])
           && request.resource.data.keys().hasOnly([
             'academiaId', 'solicitanteUid', 'nombreSolicitante',
-            'estado', 'fechaCreacion'
+            'estado', 'fechaCreacion', 'rolSolicitante'
           ])
           && request.resource.data.academiaId == academiaId
           && request.resource.data.solicitanteUid == solicitanteUid
+          && request.resource.data.rolSolicitante in ['DT', 'JUG']
+          && request.resource.data.rolSolicitante ==
+            get(/databases/$(database)/documents/users/$(solicitanteUid)).data.rol
           && request.resource.data.nombreSolicitante is string
           && request.resource.data.nombreSolicitante.size() >= 2
           && request.resource.data.nombreSolicitante.size() <= 100
@@ -177,9 +180,11 @@ service cloud.firestore {
           && request.resource.data.estado == 'PENDIENTE'
           && request.resource.data.fechaCreacion == request.time;
 
-        function perfilDtVigente() {
+        function perfilSolicitanteVigente() {
           let perfil = get(/databases/$(database)/documents/users/$(solicitanteUid)).data;
-          return perfil.rol == 'DT'
+          return perfil.uid == solicitanteUid
+            && perfil.rol in ['DT', 'JUG']
+            && perfil.rol == resource.data.get('rolSolicitante', 'DT')
             && perfil.estado in ['PENDIENTE_VINCULACION', 'ACTIVO'];
         }
 
@@ -189,7 +194,7 @@ service cloud.firestore {
           return !exists(ruta)
             && vinculo.uid == solicitanteUid
             && vinculo.academiaId == academiaId
-            && vinculo.rol == 'DT'
+            && vinculo.rol == resource.data.get('rolSolicitante', 'DT')
             && vinculo.activo == true
             && vinculo.creadoPor == request.auth.uid
             && vinculo.fechaCreacion == request.time;
@@ -207,7 +212,7 @@ service cloud.firestore {
           && (
             request.resource.data.estado == 'RECHAZADA'
             || (request.resource.data.estado == 'APROBADA'
-              && perfilDtVigente() && creaVinculoAlAprobar())
+              && perfilSolicitanteVigente() && creaVinculoAlAprobar())
           );
         allow delete: if false;
       }
@@ -221,6 +226,11 @@ service cloud.firestore {
           return antes.estado == 'PENDIENTE'
             && antes.solicitanteUid == miembroUid
             && antes.academiaId == academiaId
+            && antes.get('rolSolicitante', 'DT') in ['DT', 'JUG']
+            && request.resource.data.rol == antes.get('rolSolicitante', 'DT')
+            && despues.get('rolSolicitante', 'DT') == antes.get('rolSolicitante', 'DT')
+            && despues.solicitanteUid == miembroUid
+            && despues.academiaId == academiaId
             && despues.estado == 'APROBADA'
             && despues.revisadoPor == request.auth.uid
             && despues.fechaRevision == request.time;
@@ -237,7 +247,7 @@ service cloud.firestore {
           ])
           && request.resource.data.uid == miembroUid
           && request.resource.data.academiaId == academiaId
-          && request.resource.data.rol == 'DT'
+          && request.resource.data.rol in ['DT', 'JUG']
           && request.resource.data.activo == true
           && request.resource.data.creadoPor == request.auth.uid
           && request.resource.data.fechaCreacion == request.time

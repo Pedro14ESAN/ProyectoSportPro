@@ -22,6 +22,7 @@ import com.example.proyectosportpro.ui.theme.SportProColors
 @Composable
 fun SolicitudVinculacionScreen(
     usuarioId: String,
+    esJugador: Boolean = false,
     viewModel: SolicitudVinculacionViewModel = viewModel(
         key = "solicitud_vinculacion_$usuarioId"
     )
@@ -60,7 +61,8 @@ fun SolicitudVinculacionScreen(
 
         Text(
             text = "Solicita al administrador el código de su academia. " +
-                    "Él revisará tu solicitud como director técnico.",
+                    (if (esJugador) "Él revisará tu solicitud como jugador."
+                    else "Él revisará tu solicitud como director técnico."),
             color = SportProColors.TextSecondary
         )
 
@@ -200,7 +202,7 @@ fun SolicitudVinculacionScreen(
                     )
 
                     Text(
-                        text = solicitud.nombreSolicitante,
+                        text = "${solicitud.nombreSolicitante} · ${solicitud.rolSolicitante.etiqueta}",
                         color = SportProColors.TextPrimary
                     )
 

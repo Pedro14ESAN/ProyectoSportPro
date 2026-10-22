@@ -190,7 +190,7 @@ fun AcademiasScreen(
                                 )
                             }
                             Text(
-                                text = "Mantén pulsado el código para copiarlo y compartirlo con el DT.",
+                                text = "Mantén pulsado el código para copiarlo y compartirlo con jugadores o directores técnicos.",
                                 color = SportProColors.TextSecondary,
                                 fontSize = 12.sp
                             )
@@ -215,7 +215,7 @@ fun AcademiasScreen(
                                 onClick = { onVerSolicitudes(academia.id) },
                                 enabled = !estado.cargando
                             ) {
-                                Text("Solicitudes de DT")
+                                Text("Solicitudes de ingreso")
                             }
                         }
                     }
