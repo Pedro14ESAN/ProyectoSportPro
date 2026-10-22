@@ -36,6 +36,7 @@ import com.example.proyectosportpro.features.auth.presentation.CompletarPerfilSc
 import com.example.proyectosportpro.features.auth.presentation.LoginScreen
 import com.example.proyectosportpro.features.auth.presentation.LoginViewModel
 import com.example.proyectosportpro.features.auth.presentation.RegistroScreen
+import com.example.proyectosportpro.features.jugador.presentation.PerfilJugadorScreen
 import com.example.proyectosportpro.ui.theme.SportProColors
 
 private object Rutas {
@@ -284,15 +285,28 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                 }
                 composable(Rutas.PERFIL) {
                     if (accesoCompleto && perfil != null) {
-                        PantallaBase("Mi perfil") {
-                            Text(perfil.nombre, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                            Text("Rol: ${perfil.rol.etiqueta}")
-                            Text("Estado: ${perfil.estado}")
-                            HorizontalDivider(color = SportProColors.Border)
-                            Button(
-                                onClick = { loginViewModel.cerrarSesion() },
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text("Cerrar sesión") }
+                        if (perfil.rol == RolUsuario.JUG &&
+                            perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION")) {
+                            PerfilJugadorScreen(
+                                usuarioId = perfil.uid,
+                                nombreUsuario = perfil.nombre,
+                                onCerrarSesion = { loginViewModel.cerrarSesion() }
+                            )
+                        } else {
+                            PantallaBase("Mi perfil") {
+                                Text(perfil.nombre, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                Text("Rol: ${perfil.rol.etiqueta}")
+                                Text("Estado: ${perfil.estado}")
+                                if (perfil.rol == RolUsuario.PAD) {
+                                    Text("El acceso a los datos de un jugador requiere un vínculo verificado y aprobado por la academia.")
+                                    Text("La solicitud de vinculación como apoderado todavía no está disponible.")
+                                }
+                                HorizontalDivider(color = SportProColors.Border)
+                                Button(
+                                    onClick = { loginViewModel.cerrarSesion() },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("Cerrar sesión") }
+                            }
                         }
                     }
                 }
