@@ -1,5 +1,7 @@
 package com.example.proyectosportpro.core.navigation
 
+import android.net.Uri
+import com.example.proyectosportpro.features.academia.presentation.PlantelScreen
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -29,6 +31,7 @@ import com.example.proyectosportpro.features.academia.presentation.AcademiasScre
 import com.example.proyectosportpro.features.academia.presentation.CategoriasScreen
 import com.example.proyectosportpro.features.academia.presentation.EquiposScreen
 import com.example.proyectosportpro.features.academia.presentation.MisEquiposScreen
+import com.example.proyectosportpro.features.academia.presentation.MisEquiposJugadorScreen
 import com.example.proyectosportpro.features.academia.presentation.SolicitudesAdminScreen
 import com.example.proyectosportpro.features.auth.domain.RolUsuario
 import com.example.proyectosportpro.features.auth.presentation.CompletarFechaScreen
@@ -53,6 +56,7 @@ private object Rutas {
     const val CATEGORIAS = "categorias/{academiaId}"
     const val SOLICITUDES = "solicitudes/{academiaId}"
     const val EQUIPOS = "equipos/{academiaId}"
+    const val PLANTEL = "plantel/{academiaId}/{equipoId}"
 }
 
 private data class PestanaPrincipal(
@@ -82,11 +86,14 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
             !estado.requiereFechaNacimiento
     val esAdministrador = accesoCompleto &&
             perfil?.rol == RolUsuario.ADM && perfil.estado == "ACTIVO"
+    val puedeVerPlantel = esAdministrador || (accesoCompleto &&
+            perfil?.rol == RolUsuario.DT && perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION"))
     val rutasPrincipales = pestanas.map { it.ruta }
     val rutasAdministracion = listOf(Rutas.CATEGORIAS, Rutas.EQUIPOS, Rutas.SOLICITUDES)
     val mostrarBarra = accesoCompleto &&
             (rutaActual in rutasPrincipales ||
-                    (esAdministrador && rutaActual in rutasAdministracion))
+                    (esAdministrador && rutaActual in rutasAdministracion) ||
+                    (puedeVerPlantel && rutaActual == Rutas.PLANTEL))
 
     LaunchedEffect(
         estado.sesionRevisada, estado.cargando, estado.perfil,
@@ -97,6 +104,7 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
             estado.requiereCrearPerfil -> Rutas.PERFIL_FALTANTE
             estado.requiereFechaNacimiento -> Rutas.COMPLETAR_FECHA
             perfil != null -> when {
+                rutaActual == Rutas.PLANTEL && puedeVerPlantel -> Rutas.PLANTEL
                 rutaActual in rutasPrincipales -> checkNotNull(rutaActual)
                 esAdministrador && rutaActual in rutasAdministracion ->
                     checkNotNull(rutaActual)
@@ -110,6 +118,12 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                 popUpTo(navController.graph.id) { inclusive = true }
                 launchSingleTop = true
             }
+        }
+    }
+
+    fun abrirPlantel(academiaId: String, equipoId: String) {
+        navController.navigate("plantel/${Uri.encode(academiaId)}/${Uri.encode(equipoId)}") {
+            launchSingleTop = true
         }
     }
 
@@ -142,7 +156,7 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
             bottomBar = {
                 if (mostrarBarra) {
                     val seleccionada = when (rutaActual) {
-                        Rutas.CATEGORIAS, Rutas.EQUIPOS, Rutas.SOLICITUDES -> Rutas.ACADEMIAS
+                        Rutas.CATEGORIAS, Rutas.EQUIPOS, Rutas.SOLICITUDES, Rutas.PLANTEL -> Rutas.ACADEMIAS
                         else -> rutaActual
                     }
                     Column {
@@ -255,7 +269,14 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                             perfil.rol == RolUsuario.DT &&
                             perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION")
                         ) {
-                            MisEquiposScreen(usuarioId = perfil.uid, nombreUsuario = perfil.nombre)
+                            MisEquiposScreen(usuarioId = perfil.uid, nombreUsuario = perfil.nombre,
+                                onVerPlantel = { academia, equipo -> abrirPlantel(academia, equipo) })
+                        } else if (perfil.rol == RolUsuario.JUG &&
+                            perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION")) {
+                            MisEquiposJugadorScreen(
+                                usuarioId = perfil.uid,
+                                nombreUsuario = perfil.nombre
+                            )
                         } else {
                             PantallaBase("Equipos") {
                                 Text(if (perfil.estado == "ACTIVO") {
@@ -311,6 +332,21 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                     }
                 }
                 composable(
+                    Rutas.PLANTEL,
+                    arguments = listOf(
+                        navArgument("academiaId") { type = NavType.StringType },
+                        navArgument("equipoId") { type = NavType.StringType }
+                    )
+                ) {
+                    if (puedeVerPlantel && perfil != null) {
+                        PlantelScreen(
+                            puedeGestionar = esAdministrador,
+                            onVolver = { navController.popBackStack() },
+                            viewModel = viewModel(key = "plantel_${perfil.uid}")
+                        )
+                    }
+                }
+                composable(
                     Rutas.SOLICITUDES,
                     arguments = listOf(navArgument("academiaId") { type = NavType.StringType })
                 ) {
@@ -336,7 +372,8 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                             onVolver = { navController.popBackStack() },
                             onVerCategorias = {
                                 navController.navigate("categorias/$academiaId") { launchSingleTop = true }
-                            }
+                            },
+                            onVerPlantel = { equipoId -> abrirPlantel(academiaId, equipoId) }
                         )
                     }
                 }

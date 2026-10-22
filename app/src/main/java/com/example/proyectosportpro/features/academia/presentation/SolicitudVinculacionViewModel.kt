@@ -148,7 +148,7 @@ class SolicitudVinculacionViewModel(
         return when (errorFirestore?.code) {
             FirebaseFirestoreException.Code.PERMISSION_DENIED ->
                 "No se permitió la operación. Comprueba el código de academia, " +
-                        "el estado de tu cuenta DT y las reglas de Firestore."
+                        "el estado de tu cuenta y las reglas de Firestore."
 
             FirebaseFirestoreException.Code.UNAUTHENTICATED ->
                 "Tu sesión no es válida. Vuelve a iniciar sesión."

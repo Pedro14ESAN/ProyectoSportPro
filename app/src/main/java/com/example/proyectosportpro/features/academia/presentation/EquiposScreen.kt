@@ -24,6 +24,7 @@ import com.example.proyectosportpro.ui.theme.SportProColors
 fun EquiposScreen(
     onVolver: () -> Unit,
     onVerCategorias: () -> Unit,
+    onVerPlantel: (String) -> Unit,
     viewModel: EquiposViewModel = viewModel()
 ) {
     val estado by viewModel.uiState.collectAsStateWithLifecycle()
@@ -385,6 +386,12 @@ fun EquiposScreen(
                             )
                             Text("Categoría: " + (categoria?.nombre ?: "No disponible"))
                             Text("Estado: " + if (equipo.activo) "Activo" else "Inactivo")
+                            OutlinedButton(
+                                onClick = { detalle = null; onVerPlantel(equipo.id) },
+                                enabled = !ocupado && !hayCambios && !cambioDt,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp)
+                            ) { Text("⚽ Ver plantel") }
                             HorizontalDivider(color = SportProColors.Border)
                             Text("Director técnico", color = SportProColors.Navy,
                                 fontWeight = FontWeight.Bold)

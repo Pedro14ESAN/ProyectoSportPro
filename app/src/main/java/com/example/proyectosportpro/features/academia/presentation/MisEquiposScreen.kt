@@ -25,6 +25,7 @@ import com.example.proyectosportpro.ui.theme.SportProColors
 fun MisEquiposScreen(
     usuarioId: String,
     nombreUsuario: String,
+    onVerPlantel: (String, String) -> Unit,
     viewModel: MisEquiposViewModel = viewModel(key = "mis_equipos_$usuarioId")
 ) {
     var verSolicitud by rememberSaveable(usuarioId) { mutableStateOf(false) }
@@ -128,6 +129,14 @@ fun MisEquiposScreen(
                     Text("Categoría: ${equipo.categoriaNombre}")
                     Text("DT: $nombreUsuario")
                     Text(if (equipo.activo) "Equipo activo" else "Equipo inactivo")
+                    OutlinedButton(
+                        onClick = {
+                            detalleId = null
+                            onVerPlantel(equipo.academiaId, equipo.id)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("⚽ Ver plantel") }
                 }
             }, confirmButton = { TextButton(onClick = { detalleId = null }) { Text("Cerrar") } })
     }

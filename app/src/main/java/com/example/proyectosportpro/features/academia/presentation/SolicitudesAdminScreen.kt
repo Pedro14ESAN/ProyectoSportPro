@@ -43,7 +43,7 @@ fun SolicitudesAdminScreen(
             Text("SPORTPRO", color = SportProColors.Navy, fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.ExtraBold, fontSize = 24.sp)
             TextButton(onClick = onVolver, enabled = !estado.cargando) { Text("Volver a academias") }
-            Text("Solicitudes de DT", color = SportProColors.Navy,
+            Text("Solicitudes de ingreso", color = SportProColors.Navy,
                 fontFamily = FontFamily.Serif, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp)
             Spacer(Modifier.height(8.dp))
             Text("Revisa quién solicita incorporarse a tu academia.",
@@ -79,7 +79,7 @@ fun SolicitudesAdminScreen(
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(solicitud.nombreSolicitante, fontWeight = FontWeight.Bold,
                         fontSize = 20.sp, color = SportProColors.Navy)
-                    Text("Director técnico", color = SportProColors.TextSecondary)
+                    Text(solicitud.rolSolicitante.etiqueta, color = SportProColors.TextSecondary)
                     Surface(shape = RoundedCornerShape(8.dp),
                         color = if (solicitud.estado == EstadoSolicitudVinculacion.RECHAZADA)
                             SportProColors.InactiveBackground else SportProColors.SoftGreen) {
@@ -114,7 +114,7 @@ fun SolicitudesAdminScreen(
             title = { Text(if (aprobar) "¿Aprobar solicitud?" else "¿Rechazar solicitud?",
                 color = SportProColors.Navy) },
             text = { Text(if (aprobar)
-                "${solicitud.nombreSolicitante} quedará vinculado como DT a esta academia. " +
+                "${solicitud.nombreSolicitante} quedará vinculado con el rol ${solicitud.rolSolicitante.etiqueta} a esta academia. " +
                         "Después podrás asignarle un equipo."
             else "Se rechazará la solicitud de ${solicitud.nombreSolicitante}.") },
             confirmButton = {
