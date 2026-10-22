@@ -552,6 +552,65 @@ service cloud.firestore {
       allow list, delete: if false;
     }
 
+    // Perfil deportivo privado. PAD, DT y ADM no tienen acceso en esta etapa.
+    match /perfilesJugadores/{uid} {
+      function jugadorPropietarioHabilitado() {
+        return esPropietario(uid)
+          && get(/databases/$(database)/documents/users/$(uid)).data.uid == uid
+          && get(/databases/$(database)/documents/users/$(uid)).data.rol == 'JUG'
+          && get(/databases/$(database)/documents/users/$(uid)).data.estado
+            in ['ACTIVO', 'PENDIENTE_VINCULACION'];
+      }
+
+      function telefonoValido(valor) {
+        return valor is string
+          && (valor == '' || valor.matches('^[+]?[0-9]{7,15}$'));
+      }
+
+      function perfilDeportivoValido() {
+        let d = request.resource.data;
+        let campos = ['uid', 'posicion', 'alturaCm', 'pesoKg', 'fotoPath',
+          'telefonoContacto', 'nombreContactoEmergencia',
+          'telefonoContactoEmergencia', 'actualizadoPor',
+          'fechaCreacion', 'fechaActualizacion'];
+        return d.keys().hasAll(campos) && d.keys().hasOnly(campos)
+          && d.uid == uid
+          && (d.posicion == null || d.posicion in
+            ['PORTERO', 'DEFENSA', 'MEDIOCAMPISTA', 'DELANTERO'])
+          && (d.alturaCm == null ||
+            (d.alturaCm is int && d.alturaCm >= 50 && d.alturaCm <= 250))
+          && (d.pesoKg == null ||
+            (d.pesoKg is number && d.pesoKg >= 10 && d.pesoKg <= 300))
+          && d.fotoPath == null
+          && telefonoValido(d.telefonoContacto)
+          && telefonoValido(d.telefonoContactoEmergencia)
+          && d.nombreContactoEmergencia is string
+          && (d.nombreContactoEmergencia == '' ||
+            (d.nombreContactoEmergencia.size() >= 2 &&
+             d.nombreContactoEmergencia.size() <= 100))
+          && d.nombreContactoEmergencia == d.nombreContactoEmergencia.trim()
+          && ((d.nombreContactoEmergencia == '' && d.telefonoContactoEmergencia == '') ||
+              (d.nombreContactoEmergencia != '' && d.telefonoContactoEmergencia != ''))
+          && d.actualizadoPor == request.auth.uid
+          && d.fechaCreacion is timestamp
+          && d.fechaActualizacion == request.time;
+      }
+
+      allow get: if jugadorPropietarioHabilitado();
+      allow create: if jugadorPropietarioHabilitado()
+        && perfilDeportivoValido()
+        && request.resource.data.fechaCreacion == request.time;
+      allow update: if jugadorPropietarioHabilitado()
+        && resource.data.uid == uid
+        && perfilDeportivoValido()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'posicion', 'alturaCm', 'pesoKg', 'telefonoContacto',
+          'nombreContactoEmergencia', 'telefonoContactoEmergencia',
+          'actualizadoPor', 'fechaActualizacion'
+        ]);
+      allow list, delete: if false;
+    }
+
     // El resto de las rutas permanece sin acceso.
     match /{document=**} {
       allow read, write: if false;
