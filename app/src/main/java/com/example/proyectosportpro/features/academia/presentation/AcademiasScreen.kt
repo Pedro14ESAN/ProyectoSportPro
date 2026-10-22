@@ -1,6 +1,7 @@
 package com.example.proyectosportpro.features.academia.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +24,7 @@ fun AcademiasScreen(
     usuarioId: String,
     onVerCategorias: (String) -> Unit,
     onVerEquipos: (String) -> Unit,
+    onVerSolicitudes: (String) -> Unit,
     onCerrarSesion: () -> Unit
 ) {
     val academiaViewModel: AcademiaViewModel = viewModel(
@@ -175,6 +177,23 @@ fun AcademiasScreen(
                                 if (academia.activa) "Activa" else "Inactiva"
 
                             )
+                            Text(
+                                text = "Código de academia",
+                                color = SportProColors.TextSecondary,
+                                fontSize = 12.sp
+                            )
+                            SelectionContainer {
+                                Text(
+                                    text = academia.id,
+                                    color = SportProColors.Navy,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            Text(
+                                text = "Mantén pulsado el código para copiarlo y compartirlo con el DT.",
+                                color = SportProColors.TextSecondary,
+                                fontSize = 12.sp
+                            )
                             TextButton(
                                 onClick = {
                                     onVerCategorias(academia.id)
@@ -191,6 +210,12 @@ fun AcademiasScreen(
                                 enabled = !estado.cargando && academia.activa
                             ) {
                                 Text("Ver equipos")
+                            }
+                            TextButton(
+                                onClick = { onVerSolicitudes(academia.id) },
+                                enabled = !estado.cargando
+                            ) {
+                                Text("Solicitudes de DT")
                             }
                         }
                     }

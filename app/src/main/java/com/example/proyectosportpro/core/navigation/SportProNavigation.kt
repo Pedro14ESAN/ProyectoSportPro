@@ -28,6 +28,8 @@ import androidx.navigation.compose.rememberNavController
 import com.example.proyectosportpro.features.academia.presentation.AcademiasScreen
 import com.example.proyectosportpro.features.academia.presentation.CategoriasScreen
 import com.example.proyectosportpro.features.academia.presentation.EquiposScreen
+import com.example.proyectosportpro.features.academia.presentation.MisEquiposScreen
+import com.example.proyectosportpro.features.academia.presentation.SolicitudesAdminScreen
 import com.example.proyectosportpro.features.auth.domain.RolUsuario
 import com.example.proyectosportpro.features.auth.presentation.CompletarFechaScreen
 import com.example.proyectosportpro.features.auth.presentation.CompletarPerfilScreen
@@ -48,6 +50,7 @@ private object Rutas {
     const val COMUNIDAD = "comunidad"
     const val PERFIL = "perfil"
     const val CATEGORIAS = "categorias/{academiaId}"
+    const val SOLICITUDES = "solicitudes/{academiaId}"
     const val EQUIPOS = "equipos/{academiaId}"
 }
 
@@ -79,7 +82,7 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
     val esAdministrador = accesoCompleto &&
             perfil?.rol == RolUsuario.ADM && perfil.estado == "ACTIVO"
     val rutasPrincipales = pestanas.map { it.ruta }
-    val rutasAdministracion = listOf(Rutas.CATEGORIAS, Rutas.EQUIPOS)
+    val rutasAdministracion = listOf(Rutas.CATEGORIAS, Rutas.EQUIPOS, Rutas.SOLICITUDES)
     val mostrarBarra = accesoCompleto &&
             (rutaActual in rutasPrincipales ||
                     (esAdministrador && rutaActual in rutasAdministracion))
@@ -138,7 +141,7 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
             bottomBar = {
                 if (mostrarBarra) {
                     val seleccionada = when (rutaActual) {
-                        Rutas.CATEGORIAS, Rutas.EQUIPOS -> Rutas.ACADEMIAS
+                        Rutas.CATEGORIAS, Rutas.EQUIPOS, Rutas.SOLICITUDES -> Rutas.ACADEMIAS
                         else -> rutaActual
                     }
                     Column {
@@ -242,8 +245,16 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                                 onVerEquipos = { id ->
                                     navController.navigate("equipos/$id") { launchSingleTop = true }
                                 },
+                                onVerSolicitudes = { id ->
+                                    navController.navigate("solicitudes/$id") { launchSingleTop = true }
+                                },
                                 onCerrarSesion = { loginViewModel.cerrarSesion() }
                             )
+                        } else if (
+                            perfil.rol == RolUsuario.DT &&
+                            perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION")
+                        ) {
+                            MisEquiposScreen(usuarioId = perfil.uid, nombreUsuario = perfil.nombre)
                         } else {
                             PantallaBase("Equipos") {
                                 Text(if (perfil.estado == "ACTIVO") {
@@ -283,6 +294,14 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("Cerrar sesión") }
                         }
+                    }
+                }
+                composable(
+                    Rutas.SOLICITUDES,
+                    arguments = listOf(navArgument("academiaId") { type = NavType.StringType })
+                ) {
+                    if (esAdministrador) {
+                        SolicitudesAdminScreen(onVolver = { navController.popBackStack() })
                     }
                 }
                 composable(

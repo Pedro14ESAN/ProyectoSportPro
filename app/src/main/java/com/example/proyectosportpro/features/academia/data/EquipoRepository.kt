@@ -1,6 +1,7 @@
 package com.example.proyectosportpro.features.academia.data
 
 import com.example.proyectosportpro.features.academia.domain.Equipo
+import com.example.proyectosportpro.features.academia.domain.DirectorTecnico
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -202,6 +203,100 @@ class EquipoRepository {
             .await()
     }
 
+    suspend fun obtenerDirectoresTecnicos(
+        academiaId: String
+    ): List<DirectorTecnico> {
+        validarId(academiaId)
+        obtenerUid()
+        val academiaRef = firestore.collection("academias").document(academiaId)
+        val miembros = academiaRef.collection("miembros")
+            .get(Source.SERVER).await()
+        val aprobadas = academiaRef.collection("solicitudesVinculacion")
+            .whereEqualTo("estado", "APROBADA")
+            .get(Source.SERVER).await()
+
+        val idsHabilitados = miembros.documents.filter {
+            it.getString("uid") == it.id &&
+                    it.getString("academiaId") == academiaId &&
+                    it.getString("rol") == "DT" &&
+                    it.getBoolean("activo") == true
+        }.map { it.id }.toSet()
+
+        return aprobadas.documents.filter {
+            it.id in idsHabilitados &&
+                    it.getString("solicitanteUid") == it.id &&
+                    it.getString("academiaId") == academiaId
+        }.map { documento ->
+            DirectorTecnico(
+                uid = documento.id,
+                nombre = checkNotNull(documento.getString("nombreSolicitante")) {
+                    "Una solicitud aprobada no tiene nombre."
+                }
+            )
+        }.sortedWith(compareBy<DirectorTecnico> {
+            it.nombre.lowercase(Locale.ROOT)
+        }.thenBy { it.uid })
+    }
+
+    suspend fun asignarDirectorTecnico(
+        academiaId: String,
+        equipoId: String,
+        dtAnteriorUid: String?,
+        nuevoDtUid: String?
+    ) {
+        validarId(academiaId)
+        require(equipoId.isNotBlank() && !equipoId.contains("/")) {
+            "El identificador del equipo no es válido."
+        }
+        require(nuevoDtUid == null ||
+                (nuevoDtUid.isNotBlank() && !nuevoDtUid.contains("/"))) {
+            "El identificador del entrenador no es válido."
+        }
+        val administradorUid = obtenerUid()
+        val academiaRef = firestore.collection("academias").document(academiaId)
+        val equipoRef = equipos(academiaId).document(equipoId)
+
+        firestore.runTransaction { tx ->
+            val equipo = tx.get(equipoRef)
+            require(equipo.exists() && equipo.getString("academiaId") == academiaId) {
+                "El equipo ya no está disponible en esta academia."
+            }
+            val actualUid = equipo.getString("dtUid")
+            // Un reintento después de un guardado confirmado no repite la escritura.
+            if (actualUid == nuevoDtUid) return@runTransaction
+            require(actualUid == dtAnteriorUid) {
+                "La asignación cambió desde que abriste el equipo. Actualiza antes de continuar."
+            }
+
+            if (nuevoDtUid != null) {
+                require(equipo.getBoolean("activo") == true) {
+                    "Reactiva el equipo antes de asignarle un entrenador."
+                }
+                val miembro = tx.get(academiaRef.collection("miembros").document(nuevoDtUid))
+                val solicitud = tx.get(
+                    academiaRef.collection("solicitudesVinculacion").document(nuevoDtUid)
+                )
+                require(miembro.exists() &&
+                        miembro.getString("uid") == nuevoDtUid &&
+                        miembro.getString("academiaId") == academiaId &&
+                        miembro.getString("rol") == "DT" &&
+                        miembro.getBoolean("activo") == true &&
+                        solicitud.getString("estado") == "APROBADA" &&
+                        solicitud.getString("solicitanteUid") == nuevoDtUid &&
+                        solicitud.getString("academiaId") == academiaId) {
+                    "El DT debe tener un vínculo activo y una solicitud aprobada en esta academia."
+                }
+            }
+
+            // Las reglas de Firestore también deben autorizar y validar esta asignación.
+            tx.update(equipoRef, mapOf(
+                "dtUid" to nuevoDtUid,
+                "actualizadoPor" to administradorUid,
+                "fechaActualizacion" to FieldValue.serverTimestamp()
+            ))
+        }.await()
+    }
+
     suspend fun obtenerEquipos(
         academiaId: String
     ): List<Equipo> {
@@ -244,7 +339,8 @@ class EquipoRepository {
                     documento.getString("actualizadoPor")
                 ) {
                     "El equipo no tiene un responsable de actualización."
-                }
+                },
+                dtUid = documento.getString("dtUid")
             )
         }.sortedBy { it.nombre.lowercase(Locale.ROOT) }
     }

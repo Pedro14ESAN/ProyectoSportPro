@@ -60,7 +60,7 @@ fun EquiposScreen(
             ) {
                 item {
                     Text(
-                        text = "SPORTPRO",
+                        text = "⚽ SPORTPRO",
                         color = SportProColors.Navy,
                         fontFamily = FontFamily.Serif,
                         fontWeight = FontWeight.ExtraBold,
@@ -352,6 +352,11 @@ fun EquiposScreen(
                 var nombreEditado by remember(equipo.id, equipo.nombre) {
                     mutableStateOf(equipo.nombre)
                 }
+                var dtSeleccionadoUid by remember(equipo.id, equipo.dtUid) {
+                    mutableStateOf(equipo.dtUid)
+                }
+                var menuDtAbierto by remember(equipo.id) { mutableStateOf(false) }
+                val cambioDt = dtSeleccionadoUid != equipo.dtUid
                 val normalizado = nombreEditado.trim().replace(Regex(" +"), " ")
                 val hayCambios = normalizado != equipo.nombre
                 val ocupado = estado.guardando || estado.cargando || estado.solicitudPendiente
@@ -374,12 +379,86 @@ fun EquiposScreen(
                                 value = nombreEditado,
                                 onValueChange = { nombreEditado = it; viewModel.limpiarAvisos() },
                                 label = { Text("Nombre del equipo") },
-                                enabled = !ocupado,
+                                enabled = !ocupado && !cambioDt,
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Text("Categoría: " + (categoria?.nombre ?: "No disponible"))
                             Text("Estado: " + if (equipo.activo) "Activo" else "Inactivo")
+                            HorizontalDivider(color = SportProColors.Border)
+                            Text("Director técnico", color = SportProColors.Navy,
+                                fontWeight = FontWeight.Bold)
+                            val nombreDt = estado.directoresTecnicos.firstOrNull {
+                                it.uid == dtSeleccionadoUid
+                            }?.nombre ?: if (dtSeleccionadoUid == null) "Sin DT asignado"
+                            else "DT no disponible en la lista"
+                            Box(Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { menuDtAbierto = true },
+                                    enabled = !ocupado && !hayCambios,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) { Text("$nombreDt ▾") }
+                                DropdownMenu(expanded = menuDtAbierto,
+                                    onDismissRequest = { menuDtAbierto = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("Sin DT asignado") },
+                                        enabled = !ocupado,
+                                        onClick = {
+                                            dtSeleccionadoUid = null
+                                            menuDtAbierto = false
+                                            viewModel.limpiarAvisos()
+                                        }
+                                    )
+                                    estado.directoresTecnicos.forEach { dt ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(dt.nombre)
+                                                    if (estado.directoresTecnicos.count {
+                                                            it.nombre == dt.nombre
+                                                        } > 1) {
+                                                        Text("ID: ${dt.uid}", fontSize = 10.sp)
+                                                    }
+                                                }
+                                            },
+                                            enabled = !ocupado && equipo.activo,
+                                            onClick = {
+                                                dtSeleccionadoUid = dt.uid
+                                                menuDtAbierto = false
+                                                viewModel.limpiarAvisos()
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                            if (estado.directoresTecnicos.isEmpty()) {
+                                Text("No hay DT aprobados con vínculo activo. Revisa las solicitudes " +
+                                        "de la academia y actualiza la lista.", fontSize = 12.sp)
+                            }
+                            if (!equipo.activo) {
+                                Text("Reactiva el equipo para asignarle un DT. Puedes retirar " +
+                                        "la asignación actual.", fontSize = 12.sp)
+                            }
+                            Button(
+                                enabled = !ocupado && !hayCambios && cambioDt &&
+                                        (dtSeleccionadoUid == null || equipo.activo),
+                                onClick = {
+                                    viewModel.asignarDirectorTecnico(
+                                        equipo.id, equipo.dtUid, dtSeleccionadoUid
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = SportProColors.Field,
+                                    contentColor = SportProColors.Surface
+                                )
+                            ) { Text("Guardar asignación") }
+                            if (cambioDt) {
+                                Text("Tienes una asignación sin guardar.", fontSize = 12.sp,
+                                    color = SportProColors.Navy)
+                            }
                             HorizontalDivider()
                             Text(if (equipo.activo) {
                                 "Puedes desactivar el equipo conservando su información e historial."
@@ -387,7 +466,7 @@ fun EquiposScreen(
                                 "Puedes reactivarlo para que vuelva a aparecer en Activos."
                             })
                             OutlinedButton(
-                                enabled = !ocupado && !hayCambios,
+                                enabled = !ocupado && !hayCambios && !cambioDt,
                                 onClick = {
                                     viewModel.cambiarEstadoEquipo(equipo.id, !equipo.activo)
                                 },
@@ -412,7 +491,7 @@ fun EquiposScreen(
                     },
                     confirmButton = {
                         TextButton(
-                            enabled = !ocupado && hayCambios,
+                            enabled = !ocupado && hayCambios && !cambioDt,
                             onClick = {
                                 viewModel.editarNombreEquipo(equipo.id, equipo.nombre, nombreEditado)
                             }

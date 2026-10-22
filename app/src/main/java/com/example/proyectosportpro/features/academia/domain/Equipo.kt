@@ -7,5 +7,7 @@ data class Equipo(
     val nombre: String,
     val activo: Boolean,
     val creadoPor: String,
-    val actualizadoPor: String
+    val actualizadoPor: String,
+    //  Identificador del DT asignado al equipo.
+    val dtUid: String? = null
 )

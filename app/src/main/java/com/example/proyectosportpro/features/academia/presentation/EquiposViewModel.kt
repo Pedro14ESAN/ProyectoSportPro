@@ -7,6 +7,7 @@ import com.example.proyectosportpro.features.academia.data.CategoriaRepository
 import com.example.proyectosportpro.features.academia.data.EquipoRepository
 import com.example.proyectosportpro.features.academia.domain.Categoria
 import com.example.proyectosportpro.features.academia.domain.Equipo
+import com.example.proyectosportpro.features.academia.domain.DirectorTecnico
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
@@ -24,6 +25,7 @@ enum class FiltroEquipos(val etiqueta: String) {
 data class EquiposUiState(
     val equipos: List<Equipo> = emptyList(),
     val categorias: List<Categoria> = emptyList(),
+    val directoresTecnicos: List<DirectorTecnico> = emptyList(),
     val filtroEstado: FiltroEquipos = FiltroEquipos.ACTIVOS,
     val filtroCategoriaId: String? = null,
     val cargando: Boolean = false,
@@ -100,12 +102,14 @@ class EquiposViewModel(
                     val equipos =
                         equipoRepository.obtenerEquipos(academiaId)
 
-                    categorias to equipos
+                    val directores = equipoRepository.obtenerDirectoresTecnicos(academiaId)
+                    Triple(categorias, equipos, directores)
                 }
 
                 _uiState.value = _uiState.value.copy(
                     categorias = resultado.first,
                     equipos = resultado.second,
+                    directoresTecnicos = resultado.third,
                     cargando = false
                 )
             } catch (e: TimeoutCancellationException) {
@@ -418,6 +422,62 @@ class EquiposViewModel(
             } catch (e: TimeoutCancellationException) {
                 mostrarError("No pudimos confirmar el cambio. Cierra esta ventana " +
                         "y pulsa Actualizar antes de continuar.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val validacion = generateSequence<Throwable>(e) { it.cause }
+                    .take(10).filterIsInstance<IllegalArgumentException>().firstOrNull()
+                mostrarError(validacion?.message ?: mensajeError(e))
+            }
+        }
+    }
+
+    fun asignarDirectorTecnico(
+        equipoId: String,
+        dtAnteriorUid: String?,
+        nuevoDtUid: String?
+    ) {
+        val actual = _uiState.value
+        if (actual.guardando || actual.cargando ||
+            actual.solicitudPendiente || actual.formularioAbierto) return
+        val equipo = actual.equipos.firstOrNull { it.id == equipoId } ?: return
+
+        if (equipo.dtUid != dtAnteriorUid) {
+            mostrarError("La asignación cambió. Cierra el detalle y actualiza la lista.")
+            return
+        }
+        if (nuevoDtUid == equipo.dtUid) return
+        if (nuevoDtUid != null && !equipo.activo) {
+            mostrarError("Reactiva el equipo antes de asignarle un entrenador.")
+            return
+        }
+        if (nuevoDtUid != null && actual.directoresTecnicos.none { it.uid == nuevoDtUid }) {
+            mostrarError("Selecciona un DT aprobado de esta academia.")
+            return
+        }
+
+        _uiState.value = actual.copy(guardando = true, error = null, mensaje = null)
+        viewModelScope.launch {
+            try {
+                withTimeout(20_000) {
+                    equipoRepository.asignarDirectorTecnico(
+                        academiaId, equipoId, dtAnteriorUid, nuevoDtUid
+                    )
+                }
+                _uiState.value = _uiState.value.copy(
+                    guardando = false,
+                    equipos = _uiState.value.equipos.map {
+                        if (it.id == equipoId) it.copy(dtUid = nuevoDtUid) else it
+                    },
+                    mensaje = if (nuevoDtUid == null) {
+                        "Se retiró la asignación del DT. Su vínculo con la academia se conserva."
+                    } else {
+                        "Director técnico asignado correctamente."
+                    }
+                )
+            } catch (e: TimeoutCancellationException) {
+                mostrarError("No pudimos confirmar la asignación. Cierra el detalle y " +
+                        "pulsa Actualizar antes de reintentar.")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

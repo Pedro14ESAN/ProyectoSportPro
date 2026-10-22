@@ -8,7 +8,7 @@ object SportProColors {
     val Signal = Color(0xFFB1F568)
     val Alert = Color(0xFFEB5757)
 
-    val Background = Color(0xFFFAFBF8)
+    val Background = Color(0xFFEDF4EE)
     val Surface = Color.White
     val Border = Color(0xFFE2E7E3)
 
