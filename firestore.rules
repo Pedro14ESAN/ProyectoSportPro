@@ -317,6 +317,62 @@ service cloud.firestore {
       // EQUIPOS
 
       match /equipos/{equipoId} {
+        // Plantel: solo datos mínimos, sin acceso al perfil deportivo privado.
+        match /plantel/{jugadorUid} {
+          function equipoDelPlantel() {
+            return get(/databases/$(database)/documents/academias/$(academiaId)/equipos/$(equipoId)).data;
+          }
+          function puedeLeerPlantel() {
+            return administraAcademia() ||
+              (esDtMiembroActivo() && academiaActiva()
+                && equipoDelPlantel().academiaId == academiaId
+                && equipoDelPlantel().dtUid == request.auth.uid);
+          }
+          function jugadorAprobado() {
+            let miembro = get(/databases/$(database)/documents/academias/$(academiaId)/miembros/$(jugadorUid)).data;
+            let solicitud = get(/databases/$(database)/documents/academias/$(academiaId)/solicitudesVinculacion/$(jugadorUid)).data;
+            let cuenta = get(/databases/$(database)/documents/users/$(jugadorUid)).data;
+            return miembro.uid == jugadorUid && miembro.academiaId == academiaId
+              && miembro.rol == 'JUG' && miembro.activo == true
+              && solicitud.solicitanteUid == jugadorUid && solicitud.academiaId == academiaId
+              && solicitud.rolSolicitante == 'JUG' && solicitud.estado == 'APROBADA'
+              && cuenta.uid == jugadorUid && cuenta.rol == 'JUG'
+              && cuenta.estado in ['ACTIVO', 'PENDIENTE_VINCULACION'];
+          }
+          function datosPlantelValidos() {
+            let d = request.resource.data;
+            let campos = ['jugadorUid', 'academiaId', 'equipoId', 'nombre', 'activo',
+              'agregadoPor', 'actualizadoPor', 'fechaCreacion', 'fechaActualizacion'];
+            return d.keys().hasAll(campos) && d.keys().hasOnly(campos)
+              && d.jugadorUid == jugadorUid && d.academiaId == academiaId
+              && d.equipoId == equipoId
+              && d.nombre is string && d.nombre.size() >= 2 && d.nombre.size() <= 100
+              && d.activo is bool && d.agregadoPor is string
+              && d.actualizadoPor == request.auth.uid
+              && d.fechaCreacion is timestamp && d.fechaActualizacion == request.time;
+          }
+          allow get, list: if puedeLeerPlantel();
+          allow create: if administraAcademia() && academiaActiva()
+            && equipoDelPlantel().academiaId == academiaId
+            && equipoDelPlantel().activo == true
+            && jugadorAprobado() && datosPlantelValidos()
+            && request.resource.data.activo == true
+            && request.resource.data.agregadoPor == request.auth.uid
+            && request.resource.data.fechaCreacion == request.time
+            && request.resource.data.nombre ==
+              get(/databases/$(database)/documents/academias/$(academiaId)/solicitudesVinculacion/$(jugadorUid)).data.nombreSolicitante;
+          allow update: if administraAcademia() && academiaActiva()
+            && equipoDelPlantel().academiaId == academiaId
+            && resource.data.jugadorUid == jugadorUid
+            && resource.data.academiaId == academiaId && resource.data.equipoId == equipoId
+            && datosPlantelValidos()
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['activo', 'actualizadoPor', 'fechaActualizacion'])
+            && (request.resource.data.activo == false ||
+              (equipoDelPlantel().activo == true && jugadorAprobado()));
+          allow delete: if false;
+        }
+
         allow get, list: if esDtMiembroActivo() && academiaActiva()
           && resource.data.dtUid == request.auth.uid;
 
