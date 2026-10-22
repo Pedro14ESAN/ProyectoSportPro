@@ -35,6 +35,21 @@ service cloud.firestore {
         && resource.data.uid == request.auth.uid;
     }
 
+    function esJugadorConCuentaHabilitada() {
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.uid == request.auth.uid
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'JUG'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.estado
+          in ['ACTIVO', 'PENDIENTE_VINCULACION'];
+    }
+
+    // Descubrimiento de asignaciones propias, incluido el registro de retiros.
+    // No autoriza consultar documentos de otros jugadores ni modificarlos.
+    match /{ruta=**}/plantel/{jugadorId} {
+      allow list: if esJugadorConCuentaHabilitada()
+        && resource.data.jugadorUid == request.auth.uid;
+    }
+
     match /academias/{academiaId} {
 
       function administraAcademia() {
@@ -42,6 +57,14 @@ service cloud.firestore {
           && get(
             /databases/$(database)/documents/academias/$(academiaId)
           ).data.creadoPor == request.auth.uid;
+      }
+
+      function esJugadorMiembroActivo() {
+        return esJugadorConCuentaHabilitada()
+          && get(/databases/$(database)/documents/academias/$(academiaId)/miembros/$(request.auth.uid)).data.uid == request.auth.uid
+          && get(/databases/$(database)/documents/academias/$(academiaId)/miembros/$(request.auth.uid)).data.academiaId == academiaId
+          && get(/databases/$(database)/documents/academias/$(academiaId)/miembros/$(request.auth.uid)).data.rol == 'JUG'
+          && get(/databases/$(database)/documents/academias/$(academiaId)/miembros/$(request.auth.uid)).data.activo == true;
       }
 
       function academiaActiva() {
@@ -95,7 +118,7 @@ service cloud.firestore {
       }
 
       // Puede leer el nombre y estado de su academia, pero no listar otras.
-      allow get: if esDtMiembroActivo();
+      allow get: if esDtMiembroActivo() || esJugadorMiembroActivo();
 
       // ACADEMIAS
 
@@ -258,7 +281,7 @@ service cloud.firestore {
       // CATEGORÍAS
 
       match /categorias/{categoriaId} {
-        allow get: if esDtMiembroActivo() && academiaActiva();
+        allow get: if (esDtMiembroActivo() || esJugadorMiembroActivo()) && academiaActiva();
 
         function nombreCategoriaValido() {
           return request.resource.data.nombre is string
@@ -317,6 +340,15 @@ service cloud.firestore {
       // EQUIPOS
 
       match /equipos/{equipoId} {
+        function perteneceAlPlantel() {
+          let asignacion = get(/databases/$(database)/documents/academias/$(academiaId)/equipos/$(equipoId)/plantel/$(request.auth.uid)).data;
+          return asignacion.jugadorUid == request.auth.uid
+            && asignacion.academiaId == academiaId && asignacion.equipoId == equipoId
+            && asignacion.activo == true;
+        }
+        allow get: if esJugadorMiembroActivo() && academiaActiva()
+          && perteneceAlPlantel();
+
         // Plantel: solo datos mínimos, sin acceso al perfil deportivo privado.
         match /plantel/{jugadorUid} {
           function equipoDelPlantel() {
