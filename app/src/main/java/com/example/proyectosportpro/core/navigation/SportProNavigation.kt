@@ -28,7 +28,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.proyectosportpro.features.academia.presentation.AcademiasScreen
 import com.example.proyectosportpro.features.academia.presentation.CategoriasScreen
 import com.example.proyectosportpro.features.academia.presentation.EquiposScreen
-import com.example.proyectosportpro.features.academia.presentation.SolicitudVinculacionScreen
+import com.example.proyectosportpro.features.academia.presentation.MisEquiposScreen
 import com.example.proyectosportpro.features.academia.presentation.SolicitudesAdminScreen
 import com.example.proyectosportpro.features.auth.domain.RolUsuario
 import com.example.proyectosportpro.features.auth.presentation.CompletarFechaScreen
@@ -254,7 +254,7 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                             perfil.rol == RolUsuario.DT &&
                             perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION")
                         ) {
-                            SolicitudVinculacionScreen(usuarioId = perfil.uid)
+                            MisEquiposScreen(usuarioId = perfil.uid, nombreUsuario = perfil.nombre)
                         } else {
                             PantallaBase("Equipos") {
                                 Text(if (perfil.estado == "ACTIVO") {

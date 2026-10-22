@@ -21,6 +21,20 @@ service cloud.firestore {
         ).data.estado == 'ACTIVO';
     }
 
+    function esDtConCuentaHabilitada() {
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'DT'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.estado
+          in ['ACTIVO', 'PENDIENTE_VINCULACION'];
+    }
+
+    // Permite descubrir exclusivamente los vínculos del propio DT.
+    // La consulta debe filtrar uid == request.auth.uid.
+    match /{ruta=**}/miembros/{miembroId} {
+      allow list: if esDtConCuentaHabilitada()
+        && resource.data.uid == request.auth.uid;
+    }
+
     match /academias/{academiaId} {
 
       function administraAcademia() {
@@ -71,6 +85,17 @@ service cloud.firestore {
             /databases/$(database)/documents/academias/$(academiaId)/nombresEquipos/$(claveAnterior)
           );
       }
+
+      function esDtMiembroActivo() {
+        return esDtConCuentaHabilitada()
+          && get(/databases/$(database)/documents/academias/$(academiaId)/miembros/$(request.auth.uid)).data.uid == request.auth.uid
+          && get(/databases/$(database)/documents/academias/$(academiaId)/miembros/$(request.auth.uid)).data.academiaId == academiaId
+          && get(/databases/$(database)/documents/academias/$(academiaId)/miembros/$(request.auth.uid)).data.rol == 'DT'
+          && get(/databases/$(database)/documents/academias/$(academiaId)/miembros/$(request.auth.uid)).data.activo == true;
+      }
+
+      // Puede leer el nombre y estado de su academia, pero no listar otras.
+      allow get: if esDtMiembroActivo();
 
       // ACADEMIAS
 
@@ -223,6 +248,7 @@ service cloud.firestore {
       // CATEGORÍAS
 
       match /categorias/{categoriaId} {
+        allow get: if esDtMiembroActivo() && academiaActiva();
 
         function nombreCategoriaValido() {
           return request.resource.data.nombre is string
@@ -281,6 +307,8 @@ service cloud.firestore {
       // EQUIPOS
 
       match /equipos/{equipoId} {
+        allow get, list: if esDtMiembroActivo() && academiaActiva()
+          && resource.data.dtUid == request.auth.uid;
 
         function categoriaHabilitada() {
           let categoriaId = request.resource.data.categoriaId;
@@ -361,6 +389,38 @@ service cloud.firestore {
                 resource.data,
                 request.resource.data
               )
+            )
+          );
+
+        // Cambiar el entrenador no permite editar otros datos del equipo.
+        function entrenadorAprobado(dtUid) {
+          let miembro = get(/databases/$(database)/documents/academias/$(academiaId)/miembros/$(dtUid)).data;
+          let solicitud = get(/databases/$(database)/documents/academias/$(academiaId)/solicitudesVinculacion/$(dtUid)).data;
+          let perfil = get(/databases/$(database)/documents/users/$(dtUid)).data;
+          return miembro.uid == dtUid && miembro.academiaId == academiaId
+            && miembro.rol == 'DT' && miembro.activo == true
+            && solicitud.estado == 'APROBADA'
+            && solicitud.solicitanteUid == dtUid && solicitud.academiaId == academiaId
+            && perfil.rol == 'DT'
+            && perfil.estado in ['PENDIENTE_VINCULACION', 'ACTIVO'];
+        }
+
+        allow update: if administraAcademia() && academiaActiva()
+          && resource.data.academiaId == academiaId
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['dtUid', 'actualizadoPor', 'fechaActualizacion'])
+          && request.resource.data.keys().hasAll(['dtUid'])
+          && request.resource.data.actualizadoPor == request.auth.uid
+          && request.resource.data.fechaActualizacion == request.time
+          && (
+            request.resource.data.dtUid == null
+            || (
+              request.resource.data.dtUid is string
+              && request.resource.data.dtUid.size() > 0
+              && request.resource.data.dtUid.size() <= 128
+              && request.resource.data.dtUid.matches('^[^/]+$')
+              && resource.data.activo == true
+              && entrenadorAprobado(request.resource.data.dtUid)
             )
           );
 
