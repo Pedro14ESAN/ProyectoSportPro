@@ -85,8 +85,11 @@ fun PartidosScreen(
             Spacer(Modifier.height(24.dp))
             Text("Partidos", fontFamily = FontFamily.Serif, fontWeight = FontWeight.ExtraBold,
                 fontSize = 32.sp, color = SportProColors.Navy)
-            Text(if (rol == RolUsuario.JUG) "Calendario y resultados de tus equipos."
-                else "Programa los partidos de tus equipos y registra sus resultados.",
+            Text(when (rol) {
+                RolUsuario.JUG -> "Calendario y resultados de tus equipos."
+                RolUsuario.PAD -> "Calendario y resultados de los equipos de tus jugadores."
+                else -> "Programa los partidos de tus equipos y registra sus resultados."
+            },
                 color = SportProColors.TextSecondary)
         }
         item {
@@ -123,6 +126,8 @@ fun PartidosScreen(
                     Text("📅 No hay partidos en este filtro", fontWeight = FontWeight.Bold,
                         color = SportProColors.Navy)
                     Text(when {
+                        estado.equipos.isEmpty() && rol == RolUsuario.PAD ->
+                            "Tus jugadores vinculados aún no están en un equipo. Revisa Mis jugadores en Equipos."
                         estado.equipos.isEmpty() ->
                             "Aún no tienes equipos asignados. Cuando formes parte de uno, verás aquí sus partidos."
                         estado.equiposGestionables.isNotEmpty() ->

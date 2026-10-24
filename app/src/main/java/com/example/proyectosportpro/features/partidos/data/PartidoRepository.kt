@@ -4,6 +4,8 @@ import com.example.proyectosportpro.features.academia.data.AcademiaRepository
 import com.example.proyectosportpro.features.academia.data.EquipoRepository
 import com.example.proyectosportpro.features.academia.data.MisEquiposJugadorRepository
 import com.example.proyectosportpro.features.academia.data.MisEquiposRepository
+import com.example.proyectosportpro.features.academia.data.MisJugadoresApoderadoRepository
+import com.example.proyectosportpro.features.academia.domain.EstadoSolicitudApoderado
 import com.example.proyectosportpro.features.auth.domain.RolUsuario
 import com.example.proyectosportpro.features.partidos.domain.CondicionPartido
 import com.example.proyectosportpro.features.partidos.domain.DatosPartido
@@ -52,10 +54,47 @@ class PartidoRepository {
             RolUsuario.JUG -> MisEquiposJugadorRepository().obtenerMisEquipos().map {
                 EquipoPartido(it.academiaId, it.id, it.nombre, it.academiaNombre, puedeGestionar = false)
             }
-            RolUsuario.PAD -> emptyList()
+            RolUsuario.PAD -> obtenerEquiposDeMisJugadores(uid)
         }
         comprobarSesion(uid)
         return equipos
+    }
+
+    /** Equipos donde juegan los jugadores con vínculo activo del apoderado. */
+    private suspend fun obtenerEquiposDeMisJugadores(uid: String): List<EquipoPartido> {
+        val vinculados = MisJugadoresApoderadoRepository().obtenerMisJugadores()
+            .filter { it.estado == EstadoSolicitudApoderado.APROBADA }
+        val resultado = mutableListOf<EquipoPartido>()
+        for ((academiaId, jugadores) in vinculados.groupBy { it.academiaId }) {
+            val academiaRef = firestore.collection("academias").document(academiaId)
+            // Las reglas comprueban que este acceso se apoye en un vínculo activo.
+            academiaRef.collection("accesosApoderado").document(uid).set(mapOf(
+                "apoderadoUid" to uid,
+                "academiaId" to academiaId,
+                "jugadorUid" to jugadores.first().jugadorUid,
+                "fechaActualizacion" to FieldValue.serverTimestamp()
+            )).await()
+            comprobarSesion(uid)
+            val equipos = academiaRef.collection("equipos").get(Source.SERVER).await()
+            for (equipo in equipos.documents) {
+                if (equipo.getBoolean("activo") != true) continue
+                val nombreEquipo = equipo.getString("nombre") ?: continue
+                val enEquipo = jugadores.filter { jugador ->
+                    equipo.reference.collection("plantel").document(jugador.jugadorUid)
+                        .get(Source.SERVER).await().getBoolean("activo") == true
+                }
+                comprobarSesion(uid)
+                if (enEquipo.isEmpty()) continue
+                resultado += EquipoPartido(
+                    academiaId = academiaId,
+                    equipoId = equipo.id,
+                    nombre = "$nombreEquipo (${enEquipo.joinToString { it.nombreJugador }})",
+                    academiaNombre = jugadores.first().nombreAcademia,
+                    puedeGestionar = false
+                )
+            }
+        }
+        return resultado
     }
 
     suspend fun obtenerPartidos(rol: RolUsuario, equipos: List<EquipoPartido>): List<Partido> {

@@ -308,13 +308,12 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                 }
                 composable(Rutas.PARTIDOS) {
                     if (accesoCompleto && perfil != null) {
-                        if (esAdministrador || (perfil.rol in listOf(RolUsuario.DT, RolUsuario.JUG) &&
+                        if (esAdministrador || (perfil.rol in listOf(RolUsuario.DT, RolUsuario.JUG, RolUsuario.PAD) &&
                                     perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION"))) {
                             PartidosScreen(usuarioId = perfil.uid, rol = perfil.rol)
                         } else {
                             PantallaBase("Partidos") {
-                                Text("Aquí verás el calendario y los resultados de los equipos de tus jugadores.")
-                                Text("Esta vista para apoderados se habilitará en la próxima versión.")
+                                Text("Tu cuenta no tiene acceso a los partidos de una academia.")
                             }
                         }
                     }

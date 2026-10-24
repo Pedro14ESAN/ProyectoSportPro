@@ -73,6 +73,37 @@ service cloud.firestore {
         ).data.activa == true;
       }
 
+      function vinculoApoderadoActivo(jugadorUid) {
+        return get(/databases/$(database)/documents/academias/$(academiaId)/vinculosApoderados/$(jugadorUid)/apoderados/$(request.auth.uid)).data.activo == true;
+      }
+
+      // El acceso del apoderado se apoya en un vínculo activo con algún jugador de la academia.
+      // Si se revoca ese vínculo, el acceso deja de valer sin escribir nada más.
+      function esApoderadoConAcceso() {
+        return request.auth != null
+          && cuentaHabilitadaConRol(request.auth.uid, 'PAD')
+          && vinculoApoderadoActivo(get(/databases/$(database)/documents/academias/$(academiaId)/accesosApoderado/$(request.auth.uid)).data.jugadorUid);
+      }
+
+      // ACCESO DE APODERADOS: lo registra el propio apoderado a partir de su vínculo.
+      match /accesosApoderado/{apoderadoUid} {
+        function accesoValido() {
+          let d = request.resource.data;
+          return esPropietario(apoderadoUid)
+            && cuentaHabilitadaConRol(apoderadoUid, 'PAD')
+            && academiaActiva()
+            && d.keys().hasAll(['apoderadoUid', 'academiaId', 'jugadorUid', 'fechaActualizacion'])
+            && d.keys().hasOnly(['apoderadoUid', 'academiaId', 'jugadorUid', 'fechaActualizacion'])
+            && d.apoderadoUid == apoderadoUid && d.academiaId == academiaId
+            && d.jugadorUid is string && d.jugadorUid.matches('^[A-Za-z0-9_-]{1,128}$')
+            && d.fechaActualizacion == request.time
+            && vinculoApoderadoActivo(d.jugadorUid);
+        }
+        allow get: if esPropietario(apoderadoUid);
+        allow create, update: if accesoValido();
+        allow list, delete: if false;
+      }
+
       function nombreAcademiaValido() {
         return request.resource.data.nombre is string
           && request.resource.data.nombre.size() >= 2
@@ -384,6 +415,9 @@ service cloud.firestore {
               && d.fechaCreacion is timestamp && d.fechaActualizacion == request.time;
           }
           allow get, list: if puedeLeerPlantel();
+          // El apoderado solo comprueba la asignación de su jugador vinculado.
+          allow get: if academiaActiva() && cuentaHabilitadaConRol(request.auth.uid, 'PAD')
+            && vinculoApoderadoActivo(jugadorUid);
           allow create: if administraAcademia() && academiaActiva()
             && equipoDelPlantel().academiaId == academiaId
             && equipoDelPlantel().activo == true
@@ -404,6 +438,9 @@ service cloud.firestore {
               (equipoDelPlantel().activo == true && jugadorAprobado()));
           allow delete: if false;
         }
+
+        // El apoderado conoce los equipos para ubicar los de su jugador.
+        allow list: if academiaActiva() && esApoderadoConAcceso();
 
         allow get, list: if esDtMiembroActivo() && academiaActiva()
           && resource.data.dtUid == request.auth.uid;
@@ -622,9 +659,11 @@ service cloud.firestore {
         }
 
         // Las consultas de DT y jugadores deben filtrar equipoId.
+        // El calendario de la academia es visible para apoderados con vínculo activo.
         allow get, list: if administraAcademia()
           || (academiaActiva()
-            && (esDtDelEquipo(resource.data.equipoId) || juegaEnEquipo(resource.data.equipoId)));
+            && (esDtDelEquipo(resource.data.equipoId) || juegaEnEquipo(resource.data.equipoId)))
+          || (academiaActiva() && esApoderadoConAcceso());
 
         allow create: if academiaActiva()
           && gestionaEquipo(request.resource.data.equipoId)

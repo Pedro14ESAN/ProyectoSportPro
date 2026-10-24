@@ -24,7 +24,7 @@ beforeEach(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (c) => {
     const db = c.firestore();
-    for (const [uid, rol] of [['adm', 'ADM'], ['adm2', 'ADM'], ['dt1', 'DT'], ['dt2', 'DT'], ['jug1', 'JUG'], ['jug2', 'JUG']]) {
+    for (const [uid, rol] of [['adm', 'ADM'], ['adm2', 'ADM'], ['dt1', 'DT'], ['dt2', 'DT'], ['jug1', 'JUG'], ['jug2', 'JUG'], ['pad1', 'PAD'], ['pad2', 'PAD']]) {
       await setDoc(doc(db, `users/${uid}`), usuario(uid, rol));
     }
     await setDoc(doc(db, `academias/${A}`), { nombre: 'Academia Sol', activa: true, creadoPor: 'adm' });
@@ -34,6 +34,8 @@ beforeEach(async () => {
     await setDoc(doc(db, `academias/${A}/equipos/e1`), { academiaId: A, nombre: 'Sub 12', activo: true, dtUid: 'dt1', categoriaId: 'c1' });
     await setDoc(doc(db, `academias/${A}/equipos/e2`), { academiaId: A, nombre: 'Sub 14', activo: true, dtUid: 'dt2', categoriaId: 'c1' });
     await setDoc(doc(db, `academias/${A}/equipos/e1/plantel/jug1`), { jugadorUid: 'jug1', academiaId: A, equipoId: 'e1', activo: true });
+    await setDoc(doc(db, `academias/${A}/vinculosApoderados/jug1/apoderados/pad1`),
+      { academiaId: A, jugadorUid: 'jug1', apoderadoUid: 'pad1', activo: true });
     await setDoc(doc(db, `academias/${A}/partidos/p1`), {
       academiaId: A, equipoId: 'e1', nombreEquipo: 'Sub 12', rival: 'Leones', lugar: 'Estadio',
       fechaHora: Timestamp.fromMillis(Date.now() + 86400_000), condicion: 'LOCAL', estado: 'PROGRAMADO',
@@ -98,4 +100,33 @@ test('no se puede mover un partido a otro equipo', async () => {
   await assertFails(updateDoc(doc(como('adm'), `academias/${A}/partidos/p1`), {
     equipoId: 'e2', nombreEquipo: 'Sub 14', actualizadoPor: 'adm', fechaActualizacion: serverTimestamp()
   }));
+});
+
+const registrarAcceso = (uid, jugador = 'jug1') => setDoc(doc(como(uid), `academias/${A}/accesosApoderado/${uid}`),
+  { apoderadoUid: uid, academiaId: A, jugadorUid: jugador, fechaActualizacion: serverTimestamp() });
+
+test('el apoderado registra su acceso solo con un vínculo activo', async () => {
+  await assertFails(registrarAcceso('pad1', 'jug2'));
+  await assertFails(registrarAcceso('pad2'));
+  await assertSucceeds(registrarAcceso('pad1'));
+});
+
+test('el apoderado con acceso ve el calendario y el equipo de su jugador', async () => {
+  const db = como('pad1');
+  await assertFails(getDocs(collection(db, `academias/${A}/partidos`)));
+  await registrarAcceso('pad1');
+  await assertSucceeds(getDocs(collection(db, `academias/${A}/equipos`)));
+  await assertSucceeds(getDoc(doc(db, `academias/${A}/equipos/e1/plantel/jug1`)));
+  await assertFails(getDoc(doc(db, `academias/${A}/equipos/e1/plantel/jug2`)));
+  await assertSucceeds(getDocs(query(collection(db, `academias/${A}/partidos`), where('equipoId', '==', 'e1'))));
+  await assertFails(updateDoc(doc(db, `academias/${A}/partidos/p1`),
+    { rival: 'Cambio', actualizadoPor: 'pad1', fechaActualizacion: serverTimestamp() }));
+});
+
+test('al revocar el vínculo el apoderado pierde el acceso', async () => {
+  await registrarAcceso('pad1');
+  await env.withSecurityRulesDisabled(async (c) => {
+    await updateDoc(doc(c.firestore(), `academias/${A}/vinculosApoderados/jug1/apoderados/pad1`), { activo: false });
+  });
+  await assertFails(getDocs(collection(como('pad1'), `academias/${A}/partidos`)));
 });
