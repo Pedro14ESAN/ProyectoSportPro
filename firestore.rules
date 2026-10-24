@@ -581,6 +581,71 @@ service cloud.firestore {
 
         allow list, update: if false;
       }
+
+      // PARTIDOS: los programa el administrador o el DT del equipo.
+      match /partidos/{partidoId} {
+        function equipoDelPartido(equipoId) {
+          return get(/databases/$(database)/documents/academias/$(academiaId)/equipos/$(equipoId)).data;
+        }
+        function esDtDelEquipo(equipoId) {
+          return esDtMiembroActivo()
+            && equipoDelPartido(equipoId).dtUid == request.auth.uid;
+        }
+        function juegaEnEquipo(equipoId) {
+          let asignacion = get(/databases/$(database)/documents/academias/$(academiaId)/equipos/$(equipoId)/plantel/$(request.auth.uid)).data;
+          return esJugadorMiembroActivo()
+            && asignacion.jugadorUid == request.auth.uid
+            && asignacion.activo == true;
+        }
+        function gestionaEquipo(equipoId) {
+          return administraAcademia() || esDtDelEquipo(equipoId);
+        }
+        function golesValidos(valor) {
+          return valor is int && valor >= 0 && valor <= 99;
+        }
+        function datosPartidoValidos() {
+          let d = request.resource.data;
+          let campos = ['academiaId', 'equipoId', 'nombreEquipo', 'rival', 'lugar',
+            'fechaHora', 'condicion', 'estado', 'golesFavor', 'golesContra',
+            'creadoPor', 'actualizadoPor', 'fechaCreacion', 'fechaActualizacion'];
+          return d.keys().hasAll(campos) && d.keys().hasOnly(campos)
+            && d.academiaId == academiaId
+            && d.rival is string && d.rival.size() >= 2 && d.rival.size() <= 60
+            && d.lugar is string && d.lugar.size() >= 2 && d.lugar.size() <= 100
+            && d.fechaHora is timestamp
+            && d.condicion in ['LOCAL', 'VISITA']
+            && d.estado in ['PROGRAMADO', 'FINALIZADO', 'CANCELADO']
+            && ((d.estado == 'FINALIZADO' && golesValidos(d.golesFavor) && golesValidos(d.golesContra))
+              || (d.estado != 'FINALIZADO' && d.golesFavor == null && d.golesContra == null))
+            && d.actualizadoPor == request.auth.uid
+            && d.fechaActualizacion == request.time;
+        }
+
+        // Las consultas de DT y jugadores deben filtrar equipoId.
+        allow get, list: if administraAcademia()
+          || (academiaActiva()
+            && (esDtDelEquipo(resource.data.equipoId) || juegaEnEquipo(resource.data.equipoId)));
+
+        allow create: if academiaActiva()
+          && gestionaEquipo(request.resource.data.equipoId)
+          && datosPartidoValidos()
+          && equipoDelPartido(request.resource.data.equipoId).academiaId == academiaId
+          && equipoDelPartido(request.resource.data.equipoId).activo == true
+          && request.resource.data.nombreEquipo == equipoDelPartido(request.resource.data.equipoId).nombre
+          && request.resource.data.estado == 'PROGRAMADO'
+          && request.resource.data.creadoPor == request.auth.uid
+          && request.resource.data.fechaCreacion == request.time;
+
+        allow update: if academiaActiva()
+          && gestionaEquipo(resource.data.equipoId)
+          && datosPartidoValidos()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'rival', 'lugar', 'fechaHora', 'condicion', 'estado',
+            'golesFavor', 'golesContra', 'actualizadoPor', 'fechaActualizacion'
+          ]);
+
+        allow delete: if false;
+      }
     }
 
     // PERFILES DE USUARIOS
