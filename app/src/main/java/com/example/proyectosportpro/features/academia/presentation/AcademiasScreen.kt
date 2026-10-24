@@ -25,6 +25,7 @@ fun AcademiasScreen(
     onVerCategorias: (String) -> Unit,
     onVerEquipos: (String) -> Unit,
     onVerSolicitudes: (String) -> Unit,
+    onVerApoderados: (String) -> Unit,
     onCerrarSesion: () -> Unit
 ) {
     val academiaViewModel: AcademiaViewModel = viewModel(
@@ -216,6 +217,12 @@ fun AcademiasScreen(
                                 enabled = !estado.cargando
                             ) {
                                 Text("Solicitudes de ingreso")
+                            }
+                            TextButton(
+                                onClick = { onVerApoderados(academia.id) },
+                                enabled = !estado.cargando
+                            ) {
+                                Text("👤 Solicitudes de apoderados")
                             }
                         }
                     }

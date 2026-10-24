@@ -31,6 +31,7 @@ private data class CambioPlantel(
 fun PlantelScreen(
     puedeGestionar: Boolean,
     onVolver: () -> Unit,
+    onInvitarApoderado: (String, String) -> Unit,
     viewModel: PlantelViewModel = viewModel()
 ) {
     val estado by viewModel.uiState.collectAsStateWithLifecycle()
@@ -146,6 +147,12 @@ fun PlantelScreen(
                 Text(if (jugador.activo) "Activo en este equipo" else "Retirado del plantel activo",
                     color = SportProColors.TextSecondary)
                 if (puedeGestionar && jugador.activo) {
+                    OutlinedButton(
+                        onClick = { onInvitarApoderado(jugador.jugadorUid, jugador.nombre) },
+                        enabled = puedeModificar,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Invitar apoderado") }
                     OutlinedButton(
                         onClick = { cambio = CambioPlantel(jugador.jugadorUid, jugador.nombre, false) },
                         enabled = puedeModificar,
