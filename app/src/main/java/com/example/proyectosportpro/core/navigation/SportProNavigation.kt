@@ -46,6 +46,7 @@ import com.example.proyectosportpro.features.auth.presentation.LoginScreen
 import com.example.proyectosportpro.features.auth.presentation.LoginViewModel
 import com.example.proyectosportpro.features.auth.presentation.RegistroScreen
 import com.example.proyectosportpro.features.jugador.presentation.PerfilJugadorScreen
+import com.example.proyectosportpro.features.partidos.presentation.PartidosScreen
 import com.example.proyectosportpro.ui.theme.SportProColors
 
 private object Rutas {
@@ -306,10 +307,14 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                     }
                 }
                 composable(Rutas.PARTIDOS) {
-                    if (accesoCompleto) {
-                        PantallaBase("Partidos") {
-                            Text("Esta sección está pendiente de implementar.")
-                            Text("Aquí aparecerán la programación y el seguimiento de los partidos.")
+                    if (accesoCompleto && perfil != null) {
+                        if (esAdministrador || (perfil.rol in listOf(RolUsuario.DT, RolUsuario.JUG, RolUsuario.PAD) &&
+                                    perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION"))) {
+                            PartidosScreen(usuarioId = perfil.uid, rol = perfil.rol)
+                        } else {
+                            PantallaBase("Partidos") {
+                                Text("Tu cuenta no tiene acceso a los partidos de una academia.")
+                            }
                         }
                     }
                 }
