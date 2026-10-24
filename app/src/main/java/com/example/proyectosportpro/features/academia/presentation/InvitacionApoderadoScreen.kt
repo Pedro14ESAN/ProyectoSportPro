@@ -36,6 +36,7 @@ fun InvitacionApoderadoScreen(
     val clipboard = LocalClipboardManager.current
     var confirmarGeneracion by remember { mutableStateOf(false) }
     var confirmarNueva by remember { mutableStateOf(false) }
+    var confirmarAnulacion by remember { mutableStateOf(false) }
     var copiada by remember(estado.invitacion?.id) { mutableStateOf(false) }
 
     Column(
@@ -118,7 +119,7 @@ fun InvitacionApoderadoScreen(
                 Text(when (invitacion.estado) {
                     EstadoInvitacionApoderado.DISPONIBLE -> "Sin utilizar"
                     EstadoInvitacionApoderado.UTILIZADA -> "Ya utilizada para crear una solicitud"
-                    EstadoInvitacionApoderado.REVOCADA -> "Invitación revocada"
+                    EstadoInvitacionApoderado.REVOCADA -> "Invitación anulada"
                 }, color = SportProColors.TextSecondary)
                 Text("Vence: $fecha (hora de Lima)", color = SportProColors.TextSecondary)
                 Text("Después de esa fecha, una invitación sin utilizar ya no puede enviarse.",
@@ -135,6 +136,13 @@ fun InvitacionApoderadoScreen(
                 Text("Comparte el código por un canal privado con la cuenta destinataria. " +
                         "La invitación no constituye una aprobación del vínculo.",
                     fontSize = 12.sp, color = SportProColors.TextSecondary)
+                if (invitacion.estado == EstadoInvitacionApoderado.DISPONIBLE) {
+                    TextButton(
+                        onClick = { confirmarAnulacion = true },
+                        enabled = !estado.cargando,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Anular invitación", color = SportProColors.Alert) }
+                }
             }
         }
 
@@ -163,6 +171,26 @@ fun InvitacionApoderadoScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmarGeneracion = false }) { Text("Cancelar") }
+            }
+        )
+    }
+    if (confirmarAnulacion) {
+        AlertDialog(
+            onDismissRequest = { confirmarAnulacion = false },
+            containerColor = SportProColors.Surface,
+            title = { Text("¿Anular invitación?", color = SportProColors.Navy) },
+            text = {
+                Text("El código dejará de servir para enviar una solicitud. " +
+                        "Si ya lo compartiste por error, anúlalo y prepara otra invitación.")
+            },
+            confirmButton = {
+                TextButton(enabled = !estado.cargando, onClick = {
+                    confirmarAnulacion = false
+                    viewModel.anular()
+                }) { Text("Anular", color = SportProColors.Alert) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmarAnulacion = false }) { Text("Cancelar") }
             }
         )
     }

@@ -172,6 +172,41 @@ class AuthRepository {
         )
     }
 
+    /**
+     * Pasa la cuenta a ACTIVO si ya tiene un vínculo aprobado con una academia.
+     * Devuelve la referencia usada, o null si todavía no hay vínculo que demostrar.
+     */
+    suspend fun activarCuentaSiCorresponde(perfil: PerfilUsuario): String? {
+        val uid = checkNotNull(auth.currentUser?.uid) { "No hay una sesión iniciada." }
+        check(perfil.uid == uid) { "El perfil no corresponde a la cuenta autenticada." }
+        if (perfil.estado != "PENDIENTE_VINCULACION" || perfil.fechaNacimiento.isBlank()) return null
+
+        val referencia = when (perfil.rol) {
+            RolUsuario.JUG, RolUsuario.DT -> firestore.collectionGroup("miembros")
+                .whereEqualTo("uid", uid).get(Source.SERVER).await()
+                .documents.firstOrNull { miembro ->
+                    val academiaRef = miembro.reference.parent.parent
+                    academiaRef != null && academiaRef.parent.path == "academias" &&
+                            miembro.id == uid &&
+                            miembro.getString("academiaId") == academiaRef.id &&
+                            miembro.getString("rol") == perfil.rol.name &&
+                            miembro.getBoolean("activo") == true
+                }?.getString("academiaId")
+            RolUsuario.PAD -> firestore.collection("solicitudesApoderado")
+                .whereEqualTo("apoderadoUid", uid).get(Source.SERVER).await()
+                .documents.firstOrNull { it.getString("estado") == "APROBADA" }?.id
+            RolUsuario.ADM -> null
+        } ?: return null
+
+        check(auth.currentUser?.uid == uid) { "La sesión cambió." }
+        // Las reglas comprueban que la referencia demuestre un vínculo vigente.
+        firestore.collection("users").document(uid).update(mapOf(
+            "estado" to "ACTIVO",
+            "vinculoActivacion" to referencia
+        )).await()
+        return referencia
+    }
+
     fun obtenerUidActual(): String? {
         return auth.currentUser?.uid
     }

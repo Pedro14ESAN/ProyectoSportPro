@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.proyectosportpro.features.academia.data.InvitacionApoderadoRepository
+import com.example.proyectosportpro.features.academia.domain.EstadoInvitacionApoderado
 import com.example.proyectosportpro.features.academia.domain.InvitacionApoderado
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestoreException
@@ -81,6 +82,32 @@ class InvitacionApoderadoViewModel(
                 _uiState.value = _uiState.value.copy(
                     cargando = false,
                     error = "No pudimos confirmar el resultado. Pulsa Recuperar invitación para consultar o completar la misma operación."
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(cargando = false, error = mensajeError(e))
+            }
+        }
+    }
+
+    // Requiere confirmación en la pantalla: el código deja de servir para enviar solicitudes.
+    fun anular() {
+        val estado = _uiState.value
+        val invitacion = estado.invitacion ?: return
+        if (estado.cargando || invitacion.estado == EstadoInvitacionApoderado.UTILIZADA) return
+        _uiState.value = estado.copy(cargando = true, error = null)
+
+        viewModelScope.launch {
+            try {
+                comprobarSesion()
+                val anulada = withTimeout(25_000L) { repository.anularInvitacion(invitacion.id) }
+                comprobarSesion()
+                _uiState.value = _uiState.value.copy(cargando = false, invitacion = anulada)
+            } catch (_: TimeoutCancellationException) {
+                _uiState.value = _uiState.value.copy(
+                    cargando = false,
+                    error = "No pudimos confirmar la anulación. Pulsa Recuperar invitación para ver su estado."
                 )
             } catch (e: CancellationException) {
                 throw e
