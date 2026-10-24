@@ -28,10 +28,10 @@ service cloud.firestore {
           in ['ACTIVO', 'PENDIENTE_VINCULACION'];
     }
 
-    // Permite descubrir exclusivamente los vínculos del propio DT.
+    // Permite descubrir exclusivamente los vínculos propios del DT o del jugador.
     // La consulta debe filtrar uid == request.auth.uid.
     match /{ruta=**}/miembros/{miembroId} {
-      allow list: if esDtConCuentaHabilitada()
+      allow list: if (esDtConCuentaHabilitada() || esJugadorConCuentaHabilitada())
         && resource.data.uid == request.auth.uid;
     }
 
@@ -647,6 +647,30 @@ service cloud.firestore {
         )
         && request.resource.data.edadVerificada == false;
 
+      // La cuenta pasa a ACTIVO cuando su titular demuestra un vínculo aprobado:
+      // academia con miembro activo (JUG/DT) o solicitud aprobada (PAD).
+      function vinculoDeActivacionValido() {
+        let referencia = request.resource.data.vinculoActivacion;
+        return referencia is string
+          && referencia.matches('^[A-Za-z0-9_-]{1,128}$')
+          && ((resource.data.rol in ['JUG', 'DT']
+              && get(/databases/$(database)/documents/academias/$(referencia)).data.activa == true
+              && get(/databases/$(database)/documents/academias/$(referencia)/miembros/$(uid)).data.uid == uid
+              && get(/databases/$(database)/documents/academias/$(referencia)/miembros/$(uid)).data.rol == resource.data.rol
+              && get(/databases/$(database)/documents/academias/$(referencia)/miembros/$(uid)).data.activo == true)
+            || (resource.data.rol == 'PAD'
+              && get(/databases/$(database)/documents/solicitudesApoderado/$(referencia)).data.apoderadoUid == uid
+              && get(/databases/$(database)/documents/solicitudesApoderado/$(referencia)).data.estado == 'APROBADA'));
+      }
+
+      allow update: if esPropietario(uid)
+        && resource.data.estado == 'PENDIENTE_VINCULACION'
+        && 'fechaNacimiento' in resource.data
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['estado', 'vinculoActivacion'])
+        && request.resource.data.estado == 'ACTIVO'
+        && vinculoDeActivacionValido();
+
       allow list, delete: if false;
     }
 
@@ -795,7 +819,16 @@ service cloud.firestore {
           && !exists(rutaSolicitud)
           && datosSolicitudApoderadoValidos(s, resource.data);
       }
-      allow update: if consumoValido();
+      function anulacionValida() {
+        return administraAcademiaDeInvitacion(resource.data.academiaId)
+          && resource.data.estado == 'DISPONIBLE'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['estado', 'revocadoPor', 'fechaRevocacion'])
+          && request.resource.data.estado == 'REVOCADA'
+          && request.resource.data.revocadoPor == request.auth.uid
+          && request.resource.data.fechaRevocacion == request.time;
+      }
+      allow update: if consumoValido() || anulacionValida();
       allow list, delete: if false;
     }
 
@@ -838,16 +871,23 @@ service cloud.firestore {
 
     function datosVinculoAprobado(v, s, codigo) {
       let campos = ['academiaId', 'jugadorUid', 'apoderadoUid', 'solicitudId',
-        'relacionDeclarada', 'activo', 'aprobadoPor', 'fechaAprobacion'];
+        'relacionDeclarada', 'activo', 'aprobadoPor', 'fechaAprobacion',
+        'nombreJugador', 'nombreAcademia'];
       return v.keys().hasAll(campos) && v.keys().hasOnly(campos)
         && v.academiaId == s.academiaId && v.jugadorUid == s.jugadorUid
         && v.apoderadoUid == s.apoderadoUid && v.solicitudId == codigo
         && v.relacionDeclarada == s.relacionDeclarada && v.activo == true
-        && v.aprobadoPor == request.auth.uid && v.fechaAprobacion == request.time;
+        && v.aprobadoPor == request.auth.uid && v.fechaAprobacion == request.time
+        // Solo nombres ya visibles en la academia; no se copia el perfil privado.
+        && v.nombreJugador == get(/databases/$(database)/documents/academias/$(s.academiaId)/solicitudesVinculacion/$(s.jugadorUid)).data.nombreSolicitante
+        && v.nombreAcademia == get(/databases/$(database)/documents/academias/$(s.academiaId)).data.nombre;
     }
 
     match /solicitudesApoderado/{codigo} {
-      allow list: if administraAcademiaDeInvitacion(resource.data.academiaId);
+      // La consulta debe filtrar academiaId (administrador) o apoderadoUid (apoderado).
+      allow list: if administraAcademiaDeInvitacion(resource.data.academiaId)
+        || (request.auth != null && resource.data.apoderadoUid == request.auth.uid
+          && cuentaHabilitadaConRol(request.auth.uid, 'PAD'));
 
       function revisionInicialValida() {
         return resource.data.estado == 'PENDIENTE'
@@ -886,7 +926,8 @@ service cloud.firestore {
     }
 
     match /academias/{academiaId}/vinculosApoderados/{jugadorUid}/apoderados/{apoderadoUid} {
-      allow get: if administraAcademiaDeInvitacion(academiaId);
+      allow get: if administraAcademiaDeInvitacion(academiaId)
+        || (esPropietario(apoderadoUid) && cuentaHabilitadaConRol(apoderadoUid, 'PAD'));
 
       function aprobacionDesdeSolicitud() {
         let nuevo = request.resource.data;

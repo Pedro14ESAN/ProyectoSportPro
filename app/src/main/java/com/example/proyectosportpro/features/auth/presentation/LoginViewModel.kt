@@ -103,7 +103,19 @@ class LoginViewModel : ViewModel() {
     }
 
     private suspend fun cargarPerfil() {
-        val perfil = repository.obtenerPerfilActual()
+        var perfil = repository.obtenerPerfilActual()
+
+        // Activar la cuenta es una mejora: si falla, se mantiene el estado pendiente.
+        if (perfil != null && perfil.estado == "PENDIENTE_VINCULACION") {
+            try {
+                if (repository.activarCuentaSiCorresponde(perfil) != null) {
+                    perfil = perfil.copy(estado = "ACTIVO")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
 
         if (perfil == null) {
             _uiState.value = LoginUiState(

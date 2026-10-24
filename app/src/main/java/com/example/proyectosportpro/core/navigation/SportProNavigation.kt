@@ -6,7 +6,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import com.example.proyectosportpro.features.academia.presentation.InvitacionApoderadoScreen
-import com.example.proyectosportpro.features.academia.presentation.SolicitudApoderadoScreen
+import com.example.proyectosportpro.features.academia.presentation.MisJugadoresApoderadoScreen
 import com.example.proyectosportpro.features.academia.presentation.PlantelScreen
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -290,7 +290,7 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                             )
                         } else if (perfil.rol == RolUsuario.PAD &&
                             perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION")) {
-                            SolicitudApoderadoScreen(
+                            MisJugadoresApoderadoScreen(
                                 usuarioId = perfil.uid,
                                 nombreUsuario = perfil.nombre
                             )
@@ -347,7 +347,7 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                                     }, modifier = Modifier.fillMaxWidth()) {
                                         Text(if (identificadorCopiado) "✓ Identificador copiado" else "Copiar mi identificador")
                                     }
-                                    Text("Cuando recibas la invitación, entra en Equipos para enviar tu solicitud.")
+                                    Text("Cuando recibas la invitación, entra en Equipos para enviar tu solicitud y ver a tus jugadores.")
                                 }
                                 HorizontalDivider(color = SportProColors.Border)
                                 Button(

@@ -91,6 +91,15 @@ class SolicitudesApoderadoAdminRepository {
                 if (destino == EstadoSolicitudApoderado.APROBADA) {
                     val vinculo = tx.get(vinculoRef)
                     val miembro = tx.get(academiaRef.collection("miembros").document(solicitud.jugadorUid))
+                    // El nombre del jugador sale de su solicitud aprobada, ya visible para la academia.
+                    val ingresoJugador = tx.get(academiaRef.collection("solicitudesVinculacion")
+                        .document(solicitud.jugadorUid))
+                    val nombreJugador = checkNotNull(ingresoJugador.getString("nombreSolicitante")) {
+                        "No encontramos el nombre del jugador en la academia."
+                    }
+                    val nombreAcademia = checkNotNull(academia.getString("nombre")) {
+                        "La academia no tiene nombre."
+                    }
                     // Las reglas verifican las cuentas JUG y PAD sin exponer sus perfiles al administrador.
                     require(academia.getBoolean("activa") == true &&
                             miembro.getString("uid") == solicitud.jugadorUid &&
@@ -109,7 +118,9 @@ class SolicitudesApoderadoAdminRepository {
                         "relacionDeclarada" to solicitud.relacionDeclarada.name,
                         "activo" to true,
                         "aprobadoPor" to uid,
-                        "fechaAprobacion" to FieldValue.serverTimestamp()
+                        "fechaAprobacion" to FieldValue.serverTimestamp(),
+                        "nombreJugador" to nombreJugador,
+                        "nombreAcademia" to nombreAcademia
                     ))
                 } else if (esRevocacion) {
                     val vinculo = tx.get(vinculoRef)

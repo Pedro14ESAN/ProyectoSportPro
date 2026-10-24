@@ -98,6 +98,34 @@ class InvitacionApoderadoRepository {
         return convertirInvitacion(documento)
     }
 
+    /** Anula una invitación sin utilizar; si ya se anuló, el reintento no vuelve a escribir. */
+    suspend fun anularInvitacion(codigo: String): InvitacionApoderado {
+        validarCodigo(codigo)
+        val uid = uidActual()
+        val invitacionRef = db.collection("invitacionesApoderado").document(codigo)
+
+        db.runTransaction { tx ->
+            comprobarSesion(uid)
+            val invitacion = convertirInvitacion(tx.get(invitacionRef))
+            check(invitacion.creadoPor == uid) { "Solo quien creó la invitación puede anularla." }
+            when (invitacion.estado) {
+                EstadoInvitacionApoderado.REVOCADA -> return@runTransaction
+                EstadoInvitacionApoderado.UTILIZADA -> error(
+                    "La invitación ya se utilizó. Revisa la solicitud en Apoderados."
+                )
+                EstadoInvitacionApoderado.DISPONIBLE -> tx.update(invitacionRef, mapOf(
+                    "estado" to "REVOCADA",
+                    "revocadoPor" to uid,
+                    "fechaRevocacion" to FieldValue.serverTimestamp()
+                ))
+            }
+        }.await()
+        comprobarSesion(uid)
+        val documento = invitacionRef.get(Source.SERVER).await()
+        comprobarSesion(uid)
+        return convertirInvitacion(documento)
+    }
+
     suspend fun utilizarInvitacion(
         codigoIngresado: String,
         relacion: RelacionApoderado
