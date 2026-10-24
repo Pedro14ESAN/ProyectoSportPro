@@ -709,6 +709,221 @@ service cloud.firestore {
       allow list, delete: if false;
     }
 
+    // Invitaciones privadas: no conceden acceso a perfiles ni crean vínculos aprobados.
+    function cuentaHabilitadaConRol(uid, rol) {
+      let cuenta = get(/databases/$(database)/documents/users/$(uid)).data;
+      return cuenta.uid == uid && cuenta.rol == rol
+        && cuenta.estado in ['ACTIVO', 'PENDIENTE_VINCULACION'];
+    }
+
+    function administraAcademiaDeInvitacion(academiaId) {
+      return esAdministradorActivo()
+        && get(/databases/$(database)/documents/academias/$(academiaId)).data.creadoPor == request.auth.uid;
+    }
+
+    function jugadorVigenteParaInvitacion(academiaId, jugadorUid) {
+      let miembro = get(/databases/$(database)/documents/academias/$(academiaId)/miembros/$(jugadorUid)).data;
+      return get(/databases/$(database)/documents/academias/$(academiaId)).data.activa == true
+        && miembro.uid == jugadorUid && miembro.academiaId == academiaId
+        && miembro.rol == 'JUG' && miembro.activo == true
+        && cuentaHabilitadaConRol(jugadorUid, 'JUG');
+    }
+
+    function datosSolicitudApoderadoValidos(s, invitacion) {
+      let campos = ['academiaId', 'jugadorUid', 'apoderadoUid', 'nombreApoderado',
+        'relacionDeclarada', 'estado', 'fechaCreacion'];
+      return s.keys().hasAll(campos) && s.keys().hasOnly(campos)
+        && s.academiaId == invitacion.academiaId
+        && s.jugadorUid == invitacion.jugadorUid
+        && s.apoderadoUid == invitacion.apoderadoUid
+        && s.apoderadoUid == request.auth.uid
+        && s.nombreApoderado is string
+        && s.nombreApoderado.size() >= 2 && s.nombreApoderado.size() <= 100
+        && s.nombreApoderado == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.nombre
+        && s.relacionDeclarada in ['MADRE', 'PADRE', 'APODERADO_AUTORIZADO']
+        && s.estado == 'PENDIENTE' && s.fechaCreacion == request.time;
+    }
+
+    match /invitacionesApoderado/{codigo} {
+      // El administrador necesita leer un código aún inexistente para crear
+      // la invitación mediante una transacción con reintentos seguros.
+      allow get: if (esAdministradorActivo()
+          && (!exists(/databases/$(database)/documents/invitacionesApoderado/$(codigo))
+            || administraAcademiaDeInvitacion(resource.data.academiaId)))
+        || (request.auth != null && resource.data.apoderadoUid == request.auth.uid
+          && cuentaHabilitadaConRol(request.auth.uid, 'PAD'));
+
+      allow create: if request.auth != null
+        && codigo.matches('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')
+        && request.resource.data.keys().hasAll([
+          'academiaId', 'jugadorUid', 'apoderadoUid', 'creadoPor',
+          'estado', 'fechaCreacion', 'fechaVencimiento'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'academiaId', 'jugadorUid', 'apoderadoUid', 'creadoPor',
+          'estado', 'fechaCreacion', 'fechaVencimiento'
+        ])
+        && request.resource.data.academiaId is string
+        && request.resource.data.jugadorUid is string
+        && request.resource.data.apoderadoUid is string
+        && request.resource.data.jugadorUid != request.resource.data.apoderadoUid
+        && administraAcademiaDeInvitacion(request.resource.data.academiaId)
+        && jugadorVigenteParaInvitacion(request.resource.data.academiaId, request.resource.data.jugadorUid)
+        && cuentaHabilitadaConRol(request.resource.data.apoderadoUid, 'PAD')
+        && request.resource.data.creadoPor == request.auth.uid
+        && request.resource.data.estado == 'DISPONIBLE'
+        && request.resource.data.fechaCreacion == request.time
+        && request.resource.data.fechaVencimiento is timestamp
+        && request.resource.data.fechaVencimiento > request.time
+        && request.resource.data.fechaVencimiento <= request.time + duration.value(48, 'h');
+
+      function consumoValido() {
+        let rutaSolicitud = /databases/$(database)/documents/solicitudesApoderado/$(codigo);
+        let s = getAfter(rutaSolicitud).data;
+        return request.auth != null
+          && resource.data.apoderadoUid == request.auth.uid
+          && cuentaHabilitadaConRol(request.auth.uid, 'PAD')
+          && jugadorVigenteParaInvitacion(resource.data.academiaId, resource.data.jugadorUid)
+          && resource.data.estado == 'DISPONIBLE'
+          && resource.data.fechaVencimiento > request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['estado', 'solicitudId', 'utilizadaPor', 'fechaUso'])
+          && request.resource.data.estado == 'UTILIZADA'
+          && request.resource.data.solicitudId == codigo
+          && request.resource.data.utilizadaPor == request.auth.uid
+          && request.resource.data.fechaUso == request.time
+          && !exists(rutaSolicitud)
+          && datosSolicitudApoderadoValidos(s, resource.data);
+      }
+      allow update: if consumoValido();
+      allow list, delete: if false;
+    }
+
+    match /solicitudesApoderado/{codigo} {
+      function invitacionOriginal() {
+        return get(/databases/$(database)/documents/invitacionesApoderado/$(codigo)).data;
+      }
+      // Permite consultar una solicitud aún inexistente a su destinatario.
+      allow get: if request.auth != null
+        && ((invitacionOriginal().apoderadoUid == request.auth.uid
+              && cuentaHabilitadaConRol(request.auth.uid, 'PAD'))
+            || administraAcademiaDeInvitacion(invitacionOriginal().academiaId));
+
+      function creacionConConsumo() {
+        let rutaInvitacion = /databases/$(database)/documents/invitacionesApoderado/$(codigo);
+        let antes = get(rutaInvitacion).data;
+        let despues = getAfter(rutaInvitacion).data;
+        return request.auth != null
+          && cuentaHabilitadaConRol(request.auth.uid, 'PAD')
+          && antes.apoderadoUid == request.auth.uid
+          && antes.estado == 'DISPONIBLE' && antes.fechaVencimiento > request.time
+          && jugadorVigenteParaInvitacion(antes.academiaId, antes.jugadorUid)
+          && datosSolicitudApoderadoValidos(request.resource.data, antes)
+          && despues.estado == 'UTILIZADA' && despues.solicitudId == codigo
+          && despues.utilizadaPor == request.auth.uid && despues.fechaUso == request.time
+          && despues.academiaId == antes.academiaId
+          && despues.jugadorUid == antes.jugadorUid
+          && despues.apoderadoUid == antes.apoderadoUid;
+      }
+      allow create: if creacionConConsumo();
+      // Las decisiones del administrador se validan en el bloque de revisión inferior.
+      allow list, update, delete: if false;
+    }
+
+
+    // La solicitud conserva la auditoría; el vínculo identifica la autorización vigente.
+    function rutaVinculoApoderado(s) {
+      return /databases/$(database)/documents/academias/$(s.academiaId)/vinculosApoderados/$(s.jugadorUid)/apoderados/$(s.apoderadoUid);
+    }
+
+    function datosVinculoAprobado(v, s, codigo) {
+      let campos = ['academiaId', 'jugadorUid', 'apoderadoUid', 'solicitudId',
+        'relacionDeclarada', 'activo', 'aprobadoPor', 'fechaAprobacion'];
+      return v.keys().hasAll(campos) && v.keys().hasOnly(campos)
+        && v.academiaId == s.academiaId && v.jugadorUid == s.jugadorUid
+        && v.apoderadoUid == s.apoderadoUid && v.solicitudId == codigo
+        && v.relacionDeclarada == s.relacionDeclarada && v.activo == true
+        && v.aprobadoPor == request.auth.uid && v.fechaAprobacion == request.time;
+    }
+
+    match /solicitudesApoderado/{codigo} {
+      allow list: if administraAcademiaDeInvitacion(resource.data.academiaId);
+
+      function revisionInicialValida() {
+        return resource.data.estado == 'PENDIENTE'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['estado', 'revisadoPor', 'fechaRevision'])
+          && request.resource.data.revisadoPor == request.auth.uid
+          && request.resource.data.fechaRevision == request.time;
+      }
+
+      function aprobacionAtomica() {
+        let ruta = rutaVinculoApoderado(resource.data);
+        return revisionInicialValida() && request.resource.data.estado == 'APROBADA'
+          && jugadorVigenteParaInvitacion(resource.data.academiaId, resource.data.jugadorUid)
+          && cuentaHabilitadaConRol(resource.data.apoderadoUid, 'PAD')
+          && (!exists(ruta) || get(ruta).data.activo == false)
+          && datosVinculoAprobado(getAfter(ruta).data, resource.data, codigo);
+      }
+
+      function revocacionAtomica() {
+        let ruta = rutaVinculoApoderado(resource.data);
+        let antes = get(ruta).data;
+        let despues = getAfter(ruta).data;
+        return resource.data.estado == 'APROBADA' && request.resource.data.estado == 'REVOCADA'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['estado', 'revocadoPor', 'fechaRevocacion'])
+          && request.resource.data.revocadoPor == request.auth.uid
+          && request.resource.data.fechaRevocacion == request.time
+          && antes.activo == true && antes.solicitudId == codigo
+          && despues.activo == false && despues.solicitudId == codigo
+          && despues.revocadoPor == request.auth.uid && despues.fechaRevocacion == request.time;
+      }
+
+      allow update: if administraAcademiaDeInvitacion(resource.data.academiaId)
+        && ((revisionInicialValida() && request.resource.data.estado == 'RECHAZADA')
+          || aprobacionAtomica() || revocacionAtomica());
+    }
+
+    match /academias/{academiaId}/vinculosApoderados/{jugadorUid}/apoderados/{apoderadoUid} {
+      allow get: if administraAcademiaDeInvitacion(academiaId);
+
+      function aprobacionDesdeSolicitud() {
+        let nuevo = request.resource.data;
+        let ruta = /databases/$(database)/documents/solicitudesApoderado/$(nuevo.solicitudId);
+        let antes = get(ruta).data;
+        let despues = getAfter(ruta).data;
+        return nuevo.academiaId == academiaId && nuevo.jugadorUid == jugadorUid
+          && nuevo.apoderadoUid == apoderadoUid && jugadorUid != apoderadoUid
+          && antes.estado == 'PENDIENTE' && despues.estado == 'APROBADA'
+          && despues.revisadoPor == request.auth.uid && despues.fechaRevision == request.time
+          && datosVinculoAprobado(nuevo, antes, nuevo.solicitudId)
+          && jugadorVigenteParaInvitacion(academiaId, jugadorUid)
+          && cuentaHabilitadaConRol(apoderadoUid, 'PAD');
+      }
+
+      function revocacionDesdeSolicitud() {
+        let ruta = /databases/$(database)/documents/solicitudesApoderado/$(resource.data.solicitudId);
+        let antes = get(ruta).data;
+        let despues = getAfter(ruta).data;
+        return resource.data.activo == true && request.resource.data.activo == false
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['activo', 'revocadoPor', 'fechaRevocacion'])
+          && request.resource.data.revocadoPor == request.auth.uid
+          && request.resource.data.fechaRevocacion == request.time
+          && antes.academiaId == academiaId && antes.jugadorUid == jugadorUid
+          && antes.apoderadoUid == apoderadoUid
+          && antes.estado == 'APROBADA' && despues.estado == 'REVOCADA'
+          && despues.revocadoPor == request.auth.uid && despues.fechaRevocacion == request.time;
+      }
+
+      allow create: if administraAcademiaDeInvitacion(academiaId) && aprobacionDesdeSolicitud();
+      allow update: if administraAcademiaDeInvitacion(academiaId)
+        && ((resource.data.activo == false && aprobacionDesdeSolicitud()) || revocacionDesdeSolicitud());
+      allow list, delete: if false;
+    }
+
+
     // El resto de las rutas permanece sin acceso.
     match /{document=**} {
       allow read, write: if false;

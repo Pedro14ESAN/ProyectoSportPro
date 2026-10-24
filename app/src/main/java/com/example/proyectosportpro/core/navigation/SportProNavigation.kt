@@ -1,6 +1,12 @@
 package com.example.proyectosportpro.core.navigation
 
 import android.net.Uri
+import com.example.proyectosportpro.features.academia.presentation.SolicitudesApoderadoAdminScreen
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import com.example.proyectosportpro.features.academia.presentation.InvitacionApoderadoScreen
+import com.example.proyectosportpro.features.academia.presentation.SolicitudApoderadoScreen
 import com.example.proyectosportpro.features.academia.presentation.PlantelScreen
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -55,8 +61,10 @@ private object Rutas {
     const val PERFIL = "perfil"
     const val CATEGORIAS = "categorias/{academiaId}"
     const val SOLICITUDES = "solicitudes/{academiaId}"
+    const val APODERADOS = "apoderados/{academiaId}"
     const val EQUIPOS = "equipos/{academiaId}"
     const val PLANTEL = "plantel/{academiaId}/{equipoId}"
+    const val INVITAR_PAD = "invitar_apoderado/{academiaId}/{jugadorUid}?nombreJugador={nombreJugador}"
 }
 
 private data class PestanaPrincipal(
@@ -89,7 +97,7 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
     val puedeVerPlantel = esAdministrador || (accesoCompleto &&
             perfil?.rol == RolUsuario.DT && perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION"))
     val rutasPrincipales = pestanas.map { it.ruta }
-    val rutasAdministracion = listOf(Rutas.CATEGORIAS, Rutas.EQUIPOS, Rutas.SOLICITUDES)
+    val rutasAdministracion = listOf(Rutas.CATEGORIAS, Rutas.EQUIPOS, Rutas.SOLICITUDES, Rutas.INVITAR_PAD, Rutas.APODERADOS)
     val mostrarBarra = accesoCompleto &&
             (rutaActual in rutasPrincipales ||
                     (esAdministrador && rutaActual in rutasAdministracion) ||
@@ -156,7 +164,7 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
             bottomBar = {
                 if (mostrarBarra) {
                     val seleccionada = when (rutaActual) {
-                        Rutas.CATEGORIAS, Rutas.EQUIPOS, Rutas.SOLICITUDES, Rutas.PLANTEL -> Rutas.ACADEMIAS
+                        Rutas.CATEGORIAS, Rutas.EQUIPOS, Rutas.SOLICITUDES, Rutas.PLANTEL, Rutas.INVITAR_PAD, Rutas.APODERADOS -> Rutas.ACADEMIAS
                         else -> rutaActual
                     }
                     Column {
@@ -263,6 +271,9 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                                 onVerSolicitudes = { id ->
                                     navController.navigate("solicitudes/$id") { launchSingleTop = true }
                                 },
+                                onVerApoderados = { id ->
+                                    navController.navigate("apoderados/${Uri.encode(id)}") { launchSingleTop = true }
+                                },
                                 onCerrarSesion = { loginViewModel.cerrarSesion() }
                             )
                         } else if (
@@ -274,6 +285,12 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                         } else if (perfil.rol == RolUsuario.JUG &&
                             perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION")) {
                             MisEquiposJugadorScreen(
+                                usuarioId = perfil.uid,
+                                nombreUsuario = perfil.nombre
+                            )
+                        } else if (perfil.rol == RolUsuario.PAD &&
+                            perfil.estado in listOf("ACTIVO", "PENDIENTE_VINCULACION")) {
+                            SolicitudApoderadoScreen(
                                 usuarioId = perfil.uid,
                                 nombreUsuario = perfil.nombre
                             )
@@ -320,7 +337,17 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                                 Text("Estado: ${perfil.estado}")
                                 if (perfil.rol == RolUsuario.PAD) {
                                     Text("El acceso a los datos de un jugador requiere un vínculo verificado y aprobado por la academia.")
-                                    Text("La solicitud de vinculación como apoderado todavía no está disponible.")
+                                    Text("Comparte tu identificador con el administrador para que prepare una invitación privada para tu cuenta.")
+                                    val clipboard = LocalClipboardManager.current
+                                    var identificadorCopiado by remember(perfil.uid) { mutableStateOf(false) }
+                                    SelectionContainer { Text(perfil.uid, fontSize = 13.sp) }
+                                    OutlinedButton(onClick = {
+                                        clipboard.setText(AnnotatedString(perfil.uid))
+                                        identificadorCopiado = true
+                                    }, modifier = Modifier.fillMaxWidth()) {
+                                        Text(if (identificadorCopiado) "✓ Identificador copiado" else "Copiar mi identificador")
+                                    }
+                                    Text("Cuando recibas la invitación, entra en Equipos para enviar tu solicitud.")
                                 }
                                 HorizontalDivider(color = SportProColors.Border)
                                 Button(
@@ -337,12 +364,51 @@ fun SportProNavigation(loginViewModel: LoginViewModel = viewModel()) {
                         navArgument("academiaId") { type = NavType.StringType },
                         navArgument("equipoId") { type = NavType.StringType }
                     )
-                ) {
+                ) { entradaPlantel ->
                     if (puedeVerPlantel && perfil != null) {
                         PlantelScreen(
                             puedeGestionar = esAdministrador,
                             onVolver = { navController.popBackStack() },
+                            onInvitarApoderado = { jugadorUid, nombre ->
+                                val academiaId = entradaPlantel.arguments?.getString("academiaId")
+                                if (esAdministrador && academiaId != null) {
+                                    navController.navigate(
+                                        "invitar_apoderado/${Uri.encode(academiaId)}/${Uri.encode(jugadorUid)}?nombreJugador=${Uri.encode(nombre)}"
+                                    ) { launchSingleTop = true }
+                                }
+                            },
                             viewModel = viewModel(key = "plantel_${perfil.uid}")
+                        )
+                    }
+                }
+                composable(
+                    Rutas.INVITAR_PAD,
+                    arguments = listOf(
+                        navArgument("academiaId") { type = NavType.StringType },
+                        navArgument("jugadorUid") { type = NavType.StringType },
+                        navArgument("nombreJugador") {
+                            type = NavType.StringType
+                            defaultValue = "Jugador seleccionado"
+                        }
+                    )
+                ) { entradaInvitacion ->
+                    if (esAdministrador && perfil != null) {
+                        InvitacionApoderadoScreen(
+                            nombreJugador = entradaInvitacion.arguments?.getString("nombreJugador")
+                                ?: "Jugador seleccionado",
+                            onVolver = { navController.popBackStack() },
+                            viewModel = viewModel(key = "invitacion_apoderado_${perfil.uid}")
+                        )
+                    }
+                }
+                composable(
+                    Rutas.APODERADOS,
+                    arguments = listOf(navArgument("academiaId") { type = NavType.StringType })
+                ) {
+                    if (esAdministrador && perfil != null) {
+                        SolicitudesApoderadoAdminScreen(
+                            onVolver = { navController.popBackStack() },
+                            viewModel = viewModel(key = "revision_apoderados_${perfil.uid}")
                         )
                     }
                 }
