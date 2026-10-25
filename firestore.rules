@@ -619,24 +619,63 @@ service cloud.firestore {
         allow list, update: if false;
       }
 
+      // Funciones compartidas por partidos y avisos de cada equipo.
+      function equipoDelPartido(equipoId) {
+        return get(/databases/$(database)/documents/academias/$(academiaId)/equipos/$(equipoId)).data;
+      }
+      function esDtDelEquipo(equipoId) {
+        return esDtMiembroActivo()
+          && equipoDelPartido(equipoId).dtUid == request.auth.uid;
+      }
+      function juegaEnEquipo(equipoId) {
+        let asignacion = get(/databases/$(database)/documents/academias/$(academiaId)/equipos/$(equipoId)/plantel/$(request.auth.uid)).data;
+        return esJugadorMiembroActivo()
+          && asignacion.jugadorUid == request.auth.uid
+          && asignacion.activo == true;
+      }
+      function gestionaEquipo(equipoId) {
+        return administraAcademia() || esDtDelEquipo(equipoId);
+      }
+      function leeContenidoDeEquipo(equipoId) {
+        return administraAcademia()
+          || (academiaActiva() && (esDtDelEquipo(equipoId) || juegaEnEquipo(equipoId)))
+          || (academiaActiva() && esApoderadoConAcceso());
+      }
+
+      // COMUNIDAD: avisos que el administrador o el DT publican para un equipo.
+      match /avisos/{avisoId} {
+        function avisoValido() {
+          let d = request.resource.data;
+          let campos = ['academiaId', 'equipoId', 'nombreEquipo', 'titulo', 'mensaje',
+            'autorUid', 'autorNombre', 'activo', 'fechaCreacion'];
+          return d.keys().hasAll(campos) && d.keys().hasOnly(campos)
+            && d.academiaId == academiaId
+            && d.titulo is string && d.titulo.size() >= 2 && d.titulo.size() <= 80
+            && d.mensaje is string && d.mensaje.size() >= 2 && d.mensaje.size() <= 1000
+            && d.autorUid == request.auth.uid
+            && d.autorNombre == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.nombre
+            && d.activo == true
+            && d.fechaCreacion == request.time
+            && equipoDelPartido(d.equipoId).academiaId == academiaId
+            && equipoDelPartido(d.equipoId).activo == true
+            && d.nombreEquipo == equipoDelPartido(d.equipoId).nombre;
+        }
+
+        // Las consultas de DT, jugadores y apoderados deben filtrar equipoId.
+        allow get, list: if leeContenidoDeEquipo(resource.data.equipoId);
+        allow create: if academiaActiva()
+          && gestionaEquipo(request.resource.data.equipoId)
+          && avisoValido();
+        // Retirar un aviso lo oculta y conserva el registro.
+        allow update: if gestionaEquipo(resource.data.equipoId)
+          && resource.data.activo == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activo'])
+          && request.resource.data.activo == false;
+        allow delete: if false;
+      }
+
       // PARTIDOS: los programa el administrador o el DT del equipo.
       match /partidos/{partidoId} {
-        function equipoDelPartido(equipoId) {
-          return get(/databases/$(database)/documents/academias/$(academiaId)/equipos/$(equipoId)).data;
-        }
-        function esDtDelEquipo(equipoId) {
-          return esDtMiembroActivo()
-            && equipoDelPartido(equipoId).dtUid == request.auth.uid;
-        }
-        function juegaEnEquipo(equipoId) {
-          let asignacion = get(/databases/$(database)/documents/academias/$(academiaId)/equipos/$(equipoId)/plantel/$(request.auth.uid)).data;
-          return esJugadorMiembroActivo()
-            && asignacion.jugadorUid == request.auth.uid
-            && asignacion.activo == true;
-        }
-        function gestionaEquipo(equipoId) {
-          return administraAcademia() || esDtDelEquipo(equipoId);
-        }
         function golesValidos(valor) {
           return valor is int && valor >= 0 && valor <= 99;
         }
@@ -660,10 +699,7 @@ service cloud.firestore {
 
         // Las consultas de DT y jugadores deben filtrar equipoId.
         // El calendario de la academia es visible para apoderados con vínculo activo.
-        allow get, list: if administraAcademia()
-          || (academiaActiva()
-            && (esDtDelEquipo(resource.data.equipoId) || juegaEnEquipo(resource.data.equipoId)))
-          || (academiaActiva() && esApoderadoConAcceso());
+        allow get, list: if leeContenidoDeEquipo(resource.data.equipoId);
 
         allow create: if academiaActiva()
           && gestionaEquipo(request.resource.data.equipoId)
