@@ -18,12 +18,13 @@ class FiltroPartidosTest {
         partido("p1", 10, EstadoPartido.FINALIZADO, 2, 1),
         partido("p4", 20, EstadoPartido.PROGRAMADO),
         partido("p2", 15, EstadoPartido.FINALIZADO, 0, 0),
-        partido("p5", 25, EstadoPartido.CANCELADO)
+        partido("p5", 25, EstadoPartido.CANCELADO),
+        partido("p6", 40, EstadoPartido.EN_JUEGO)
     )
 
     @Test
-    fun proximosMuestraProgramadosEnOrdenCronologico() {
-        assertEquals(listOf("p4", "p3"), FiltroPartidos.PROXIMOS.aplicar(partidos).map { it.id })
+    fun proximosMuestraPrimeroElPartidoEnJuegoYLuegoLosProgramados() {
+        assertEquals(listOf("p6", "p4", "p3"), FiltroPartidos.PROXIMOS.aplicar(partidos).map { it.id })
     }
 
     @Test
@@ -33,7 +34,7 @@ class FiltroPartidosTest {
 
     @Test
     fun todosIncluyeCanceladosEnOrdenCronologico() {
-        assertEquals(listOf("p1", "p2", "p4", "p5", "p3"), FiltroPartidos.TODOS.aplicar(partidos).map { it.id })
+        assertEquals(listOf("p1", "p2", "p4", "p5", "p3", "p6"), FiltroPartidos.TODOS.aplicar(partidos).map { it.id })
     }
 
     @Test

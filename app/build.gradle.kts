@@ -56,6 +56,8 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
+    // Resumen narrativo con Gemini mediante Firebase AI Logic.
+    implementation("com.google.firebase:firebase-ai")
 
     // ViewModel para las pantallas de Compose.
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")

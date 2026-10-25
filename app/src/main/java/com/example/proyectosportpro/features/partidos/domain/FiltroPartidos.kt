@@ -5,10 +5,10 @@ enum class FiltroPartidos(val etiqueta: String) {
     JUGADOS("Jugados"),
     TODOS("Todos");
 
-    /** Próximos en orden cronológico; jugados del más reciente al más antiguo. */
+    /** Próximos con los que están en juego primero; jugados del más reciente al más antiguo. */
     fun aplicar(partidos: List<Partido>): List<Partido> = when (this) {
-        PROXIMOS -> partidos.filter { it.estado == EstadoPartido.PROGRAMADO }
-            .sortedBy { it.fechaHoraMillis }
+        PROXIMOS -> partidos.filter { it.estado == EstadoPartido.PROGRAMADO || it.estado == EstadoPartido.EN_JUEGO }
+            .sortedWith(compareBy<Partido> { it.estado != EstadoPartido.EN_JUEGO }.thenBy { it.fechaHoraMillis })
         JUGADOS -> partidos.filter { it.estado == EstadoPartido.FINALIZADO }
             .sortedByDescending { it.fechaHoraMillis }
         TODOS -> partidos.sortedBy { it.fechaHoraMillis }

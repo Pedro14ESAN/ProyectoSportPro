@@ -2,6 +2,7 @@ package com.example.proyectosportpro.features.partidos.domain
 
 enum class EstadoPartido(val etiqueta: String) {
     PROGRAMADO("Programado"),
+    EN_JUEGO("En juego"),
     FINALIZADO("Finalizado"),
     CANCELADO("Cancelado")
 }
