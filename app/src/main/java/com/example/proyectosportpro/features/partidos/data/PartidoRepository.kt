@@ -97,7 +97,10 @@ class PartidoRepository {
         return resultado
     }
 
-    suspend fun obtenerPartidos(rol: RolUsuario, equipos: List<EquipoPartido>): List<Partido> {
+    /** Partidos legibles y cuántos documentos se omitieron por estar incompletos. */
+    data class Calendario(val partidos: List<Partido>, val omitidos: Int)
+
+    suspend fun obtenerPartidos(rol: RolUsuario, equipos: List<EquipoPartido>): Calendario {
         val uid = uidActual()
         val documentos = if (rol == RolUsuario.ADM) {
             // El administrador consulta cada academia completa.
@@ -112,8 +115,9 @@ class PartidoRepository {
             }
         }
         comprobarSesion(uid)
-        return documentos.map { convertir(it) }.distinctBy { "${it.academiaId}/${it.id}" }
-            .sortedBy { it.fechaHoraMillis }
+        val unicos = documentos.distinctBy { it.reference.path }
+        val partidos = unicos.mapNotNull { convertir(it) }.sortedBy { it.fechaHoraMillis }
+        return Calendario(partidos, omitidos = unicos.size - partidos.size)
     }
 
     suspend fun programar(partidoId: String, equipo: EquipoPartido, datos: DatosPartido) {
@@ -174,20 +178,24 @@ class PartidoRepository {
         comprobarSesion(uid)
     }
 
-    private fun convertir(d: DocumentSnapshot): Partido {
-        fun texto(campo: String) = checkNotNull(d.getString(campo)) { "El partido está incompleto: $campo." }
-        return Partido(
-            id = d.id,
-            academiaId = texto("academiaId"),
-            equipoId = texto("equipoId"),
-            nombreEquipo = texto("nombreEquipo"),
-            rival = texto("rival"),
-            lugar = texto("lugar"),
-            fechaHoraMillis = checkNotNull(d.getTimestamp("fechaHora")).toDate().time,
-            condicion = CondicionPartido.valueOf(texto("condicion")),
-            estado = EstadoPartido.valueOf(texto("estado")),
-            golesFavor = d.getLong("golesFavor")?.toInt(),
-            golesContra = d.getLong("golesContra")?.toInt()
-        )
+    companion object {
+        /** Devuelve null si el documento está incompleto, para no ocultar el resto del calendario. */
+        fun convertir(d: DocumentSnapshot): Partido? {
+            val estado = d.getString("estado")?.let { valor -> EstadoPartido.entries.firstOrNull { it.name == valor } }
+            val condicion = d.getString("condicion")?.let { valor -> CondicionPartido.entries.firstOrNull { it.name == valor } }
+            return Partido(
+                id = d.id,
+                academiaId = d.getString("academiaId") ?: return null,
+                equipoId = d.getString("equipoId") ?: return null,
+                nombreEquipo = d.getString("nombreEquipo") ?: return null,
+                rival = d.getString("rival") ?: return null,
+                lugar = d.getString("lugar") ?: return null,
+                fechaHoraMillis = d.getTimestamp("fechaHora")?.toDate()?.time ?: return null,
+                condicion = condicion ?: return null,
+                estado = estado ?: return null,
+                golesFavor = d.getLong("golesFavor")?.toInt(),
+                golesContra = d.getLong("golesContra")?.toInt()
+            )
+        }
     }
 }

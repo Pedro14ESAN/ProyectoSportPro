@@ -25,7 +25,8 @@ data class PartidosUiState(
     val cargando: Boolean = true,
     val guardando: Boolean = false,
     val error: String? = null,
-    val mensaje: String? = null
+    val mensaje: String? = null,
+    val omitidos: Int = 0
 ) {
     val equiposGestionables: List<EquipoPartido>
         get() = equipos.filter { it.puedeGestionar }
@@ -68,13 +69,14 @@ class PartidosViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 comprobarSesion()
-                val (equipos, partidos) = withTimeout(30_000L) {
+                val (equipos, calendario) = withTimeout(30_000L) {
                     val equipos = repository.obtenerEquipos(rolActual)
                     equipos to repository.obtenerPartidos(rolActual, equipos)
                 }
                 comprobarSesion()
                 _uiState.value = _uiState.value.copy(
-                    equipos = equipos, partidos = partidos, cargando = false
+                    equipos = equipos, partidos = calendario.partidos, omitidos = calendario.omitidos,
+                    cargando = false
                 )
             } catch (_: TimeoutCancellationException) {
                 mostrarError("La consulta tardó demasiado. Pulsa Actualizar.")
@@ -125,12 +127,13 @@ class PartidosViewModel : ViewModel() {
                 comprobarSesion()
                 withTimeout(25_000L) { operacion() }
                 guardado = true
-                val partidos = withTimeout(30_000L) {
+                val calendario = withTimeout(30_000L) {
                     repository.obtenerPartidos(rolActual, _uiState.value.equipos)
                 }
                 comprobarSesion()
                 _uiState.value = _uiState.value.copy(
-                    partidos = partidos, guardando = false, mensaje = mensajeExito
+                    partidos = calendario.partidos, omitidos = calendario.omitidos,
+                    guardando = false, mensaje = mensajeExito
                 )
             } catch (_: TimeoutCancellationException) {
                 _uiState.value = _uiState.value.copy(guardando = false, error = if (guardado)
@@ -146,7 +149,7 @@ class PartidosViewModel : ViewModel() {
 
     private fun mostrarError(mensaje: String) {
         _uiState.value = _uiState.value.copy(
-            equipos = emptyList(), partidos = emptyList(), cargando = false, error = mensaje
+            equipos = emptyList(), partidos = emptyList(), omitidos = 0, cargando = false, error = mensaje
         )
     }
 

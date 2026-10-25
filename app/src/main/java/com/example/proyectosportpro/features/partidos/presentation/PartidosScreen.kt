@@ -61,8 +61,19 @@ fun PartidosScreen(
     var formulario by remember { mutableStateOf<FormularioPartido?>(null) }
     var resultadoDe by remember { mutableStateOf<Partido?>(null) }
     var cancelarDe by remember { mutableStateOf<Partido?>(null) }
+    var abierto by remember { mutableStateOf<Partido?>(null) }
     LaunchedEffect(usuarioId, rol) { viewModel.iniciar(rol) }
     val ocupado = estado.cargando || estado.guardando
+
+    abierto?.let { partido ->
+        PartidoEnVivoScreen(
+            partido = partido,
+            puedeGestionar = estado.puedeGestionar(partido),
+            esAdministrador = rol == RolUsuario.ADM,
+            onVolver = { abierto = null; viewModel.actualizar() }
+        )
+        return
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(SportProColors.Background).safeDrawingPadding(),
@@ -121,6 +132,10 @@ fun PartidosScreen(
             if (ocupado) LinearProgressIndicator(Modifier.fillMaxWidth(), color = SportProColors.Field)
             estado.error?.let { Text(it, color = SportProColors.Alert) }
             estado.mensaje?.let { Text(it, color = SportProColors.Field, fontWeight = FontWeight.SemiBold) }
+            if (estado.omitidos > 0) {
+                Text("⚠ ${estado.omitidos} partido(s) con datos incompletos no se muestran. Avisa al administrador.",
+                    color = SportProColors.Alert, fontSize = 13.sp)
+            }
         }
         if (!estado.cargando && estado.error == null && estado.partidosVisibles.isEmpty()) {
             item {
@@ -150,7 +165,8 @@ fun PartidosScreen(
                 habilitado = !ocupado,
                 onEditar = { formulario = FormularioPartido(partido) },
                 onResultado = { resultadoDe = partido },
-                onCancelar = { cancelarDe = partido }
+                onCancelar = { cancelarDe = partido },
+                onAbrir = { abierto = partido }
             )
         }
     }
@@ -199,7 +215,8 @@ private fun TarjetaPartidoItem(
     habilitado: Boolean,
     onEditar: () -> Unit,
     onResultado: () -> Unit,
-    onCancelar: () -> Unit
+    onCancelar: () -> Unit,
+    onAbrir: () -> Unit
 ) {
     TarjetaPartido {
         Text(listOfNotNull(academia, partido.nombreEquipo).joinToString(" · "),
@@ -216,14 +233,26 @@ private fun TarjetaPartidoItem(
         Text("📍 ${partido.lugar} · ${partido.condicion.etiqueta}", color = SportProColors.TextSecondary)
         Surface(shape = RoundedCornerShape(8.dp), color = when (partido.estado) {
             EstadoPartido.PROGRAMADO -> SportProColors.SoftGreen
+            EstadoPartido.EN_JUEGO -> SportProColors.Signal
             EstadoPartido.FINALIZADO -> SportProColors.SelectedGreen
             EstadoPartido.CANCELADO -> SportProColors.InactiveBackground
         }) {
-            Text(partido.estado.etiqueta, Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            Text(if (partido.estado == EstadoPartido.EN_JUEGO) "● En vivo" else partido.estado.etiqueta,
+                Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                 color = if (partido.estado == EstadoPartido.CANCELADO) SportProColors.InactiveText
                 else SportProColors.Navy, fontSize = 13.sp)
         }
-        if (gestionable && partido.estado != EstadoPartido.CANCELADO) {
+        val textoAbrir = when (partido.estado) {
+            EstadoPartido.EN_JUEGO -> "Seguir en vivo"
+            EstadoPartido.FINALIZADO -> "Cronología y resumen"
+            EstadoPartido.PROGRAMADO -> if (gestionable) "Abrir partido" else null
+            EstadoPartido.CANCELADO -> null
+        }
+        textoAbrir?.let {
+            Button(onClick = onAbrir, enabled = habilitado, shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SportProColors.Navy)) { Text(it) }
+        }
+        if (gestionable && partido.estado in listOf(EstadoPartido.PROGRAMADO, EstadoPartido.FINALIZADO)) {
             Row(Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onResultado, enabled = habilitado) {

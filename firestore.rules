@@ -692,7 +692,7 @@ service cloud.firestore {
             && d.lugar is string && d.lugar.size() >= 2 && d.lugar.size() <= 100
             && d.fechaHora is timestamp
             && d.condicion in ['LOCAL', 'VISITA']
-            && d.estado in ['PROGRAMADO', 'FINALIZADO', 'CANCELADO']
+            && d.estado in ['PROGRAMADO', 'EN_JUEGO', 'FINALIZADO', 'CANCELADO']
             && ((d.estado == 'FINALIZADO' && golesValidos(d.golesFavor) && golesValidos(d.golesContra))
               || (d.estado != 'FINALIZADO' && d.golesFavor == null && d.golesContra == null))
             && d.actualizadoPor == request.auth.uid
@@ -715,15 +715,145 @@ service cloud.firestore {
           && request.resource.data.creadoPor == request.auth.uid
           && request.resource.data.fechaCreacion == request.time;
 
+        // Solo el administrador inicia el partido; un partido cancelado ya no cambia.
+        function transicionValida() {
+          let antes = resource.data.estado;
+          let despues = request.resource.data.estado;
+          return (antes == 'PROGRAMADO' && despues in ['PROGRAMADO', 'FINALIZADO', 'CANCELADO'])
+            || (antes == 'PROGRAMADO' && despues == 'EN_JUEGO' && administraAcademia())
+            || (antes == 'EN_JUEGO' && despues in ['EN_JUEGO', 'FINALIZADO'])
+            || (antes == 'FINALIZADO' && despues == 'FINALIZADO');
+        }
+
         allow update: if academiaActiva()
           && gestionaEquipo(resource.data.equipoId)
           && datosPartidoValidos()
+          && transicionValida()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'rival', 'lugar', 'fechaHora', 'condicion', 'estado',
             'golesFavor', 'golesContra', 'actualizadoPor', 'fechaActualizacion'
           ]);
 
         allow delete: if false;
+
+        function partidoActual() {
+          return get(/databases/$(database)/documents/academias/$(academiaId)/partidos/$(partidoId)).data;
+        }
+        function jugadorDelEquipo(jugadorUid, jugadorNombre) {
+          let asignacion = get(/databases/$(database)/documents/academias/$(academiaId)/equipos/$(partidoActual().equipoId)/plantel/$(jugadorUid)).data;
+          return asignacion.jugadorUid == jugadorUid && asignacion.nombre == jugadorNombre;
+        }
+        function datosEventoValidos(d) {
+          return d.tipo in ['GOL', 'TARJETA_AMARILLA', 'TARJETA_ROJA', 'CAMBIO', 'OTRO']
+            && d.lado in ['PROPIO', 'RIVAL']
+            && (d.minuto == null || (d.minuto is int && d.minuto >= 0 && d.minuto <= 130))
+            && d.detalle is string && d.detalle.size() <= 140
+            && ((d.jugadorUid == null && d.jugadorNombre == null)
+              || (d.lado == 'PROPIO' && d.jugadorUid is string && jugadorDelEquipo(d.jugadorUid, d.jugadorNombre)))
+            && ((d.anulado == false && d.motivoAnulacion == null)
+              || (d.anulado == true && d.motivoAnulacion is string
+                && d.motivoAnulacion.size() >= 3 && d.motivoAnulacion.size() <= 140));
+        }
+
+        // EVENTOS EN VIVO: el DT del equipo o el administrador los registran mientras el
+        // partido está en juego y pueden corregirlos después; nunca se borran.
+        match /eventos/{eventoId} {
+          function eventoValido() {
+            let d = request.resource.data;
+            let campos = ['partidoId', 'tipo', 'lado', 'minuto', 'jugadorUid', 'jugadorNombre',
+              'detalle', 'anulado', 'motivoAnulacion', 'version', 'creadoPor', 'actualizadoPor',
+              'fechaCreacion', 'fechaActualizacion'];
+            return d.keys().hasAll(campos) && d.keys().hasOnly(campos)
+              && d.partidoId == partidoId
+              && datosEventoValidos(d)
+              && d.actualizadoPor == request.auth.uid
+              && d.fechaActualizacion == request.time;
+          }
+          function puedeEditarEventos() {
+            return academiaActiva()
+              && gestionaEquipo(partidoActual().equipoId)
+              && partidoActual().estado in ['EN_JUEGO', 'FINALIZADO'];
+          }
+
+          // La lectura depende del partido, así la cronología se consulta sin filtros.
+          allow get, list: if leeContenidoDeEquipo(partidoActual().equipoId);
+
+          allow create: if puedeEditarEventos()
+            && eventoValido()
+            && request.resource.data.anulado == false
+            && request.resource.data.version == 1
+            && request.resource.data.creadoPor == request.auth.uid
+            && request.resource.data.fechaCreacion == request.time;
+
+          // Cada cambio deja la versión anterior en el historial dentro de la misma escritura.
+          allow update: if puedeEditarEventos()
+            && eventoValido()
+            && request.resource.data.version == resource.data.version + 1
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'tipo', 'lado', 'minuto', 'jugadorUid', 'jugadorNombre', 'detalle', 'anulado',
+              'motivoAnulacion', 'version', 'actualizadoPor', 'fechaActualizacion'
+            ])
+            && existsAfter(/databases/$(database)/documents/academias/$(academiaId)/partidos/$(partidoId)/eventos/$(eventoId)/historial/$(string(resource.data.version)));
+
+          allow delete: if false;
+
+          match /historial/{version} {
+            function eventoAntes() {
+              return get(/databases/$(database)/documents/academias/$(academiaId)/partidos/$(partidoId)/eventos/$(eventoId)).data;
+            }
+            function copiaFiel() {
+              let d = request.resource.data;
+              let e = eventoAntes();
+              return d.keys().hasOnly(['tipo', 'lado', 'minuto', 'jugadorUid', 'jugadorNombre', 'detalle',
+                  'version', 'anulado', 'motivoAnulacion', 'reemplazadoPor', 'fechaCambio'])
+                && d.tipo == e.tipo && d.lado == e.lado && d.minuto == e.minuto
+                && d.jugadorUid == e.jugadorUid && d.jugadorNombre == e.jugadorNombre
+                && d.detalle == e.detalle && d.anulado == e.anulado
+                && d.motivoAnulacion == e.motivoAnulacion
+                && d.version == e.version && version == string(e.version);
+            }
+
+            allow get, list: if leeContenidoDeEquipo(partidoActual().equipoId);
+
+            allow create: if puedeEditarEventos()
+              && copiaFiel()
+              && request.resource.data.reemplazadoPor == request.auth.uid
+              && request.resource.data.fechaCambio == request.time
+              && getAfter(/databases/$(database)/documents/academias/$(academiaId)/partidos/$(partidoId)/eventos/$(eventoId)).data.version == eventoAntes().version + 1;
+
+            allow update, delete: if false;
+          }
+        }
+
+        // RESUMEN NARRATIVO: el cuerpo técnico revisa el borrador de la IA; los demás solo
+        // leen el aprobado.
+        match /resumen/{resumenId} {
+          function resumenValido() {
+            let d = request.resource.data;
+            let campos = ['academiaId', 'partidoId', 'texto', 'estado', 'generadoConIA', 'modelo',
+              'actualizadoPor', 'fechaActualizacion'];
+            return d.keys().hasAll(campos) && d.keys().hasOnly(campos)
+              && resumenId == 'actual'
+              && d.academiaId == academiaId && d.partidoId == partidoId
+              && d.texto is string && d.texto.size() >= 20 && d.texto.size() <= 4000
+              && d.estado in ['BORRADOR', 'APROBADO']
+              && d.generadoConIA is bool
+              && d.modelo is string && d.modelo.size() <= 60
+              && d.actualizadoPor == request.auth.uid
+              && d.fechaActualizacion == request.time;
+          }
+
+          allow get: if gestionaEquipo(partidoActual().equipoId)
+            || (leeContenidoDeEquipo(partidoActual().equipoId)
+              && (resource == null || resource.data.estado == 'APROBADO'));
+
+          allow create, update: if academiaActiva()
+            && gestionaEquipo(partidoActual().equipoId)
+            && partidoActual().estado == 'FINALIZADO'
+            && resumenValido();
+
+          allow delete: if false;
+        }
       }
     }
 
