@@ -663,6 +663,8 @@ service cloud.firestore {
 
         // Las consultas de DT, jugadores y apoderados deben filtrar equipoId.
         allow get, list: if leeContenidoDeEquipo(resource.data.equipoId);
+        // Al publicar, la transacción comprueba que el identificador nuevo esté libre.
+        allow get: if resource == null && (administraAcademia() || esDtMiembroActivo());
         allow create: if academiaActiva()
           && gestionaEquipo(request.resource.data.equipoId)
           && avisoValido();
@@ -700,6 +702,8 @@ service cloud.firestore {
         // Las consultas de DT y jugadores deben filtrar equipoId.
         // El calendario de la academia es visible para apoderados con vínculo activo.
         allow get, list: if leeContenidoDeEquipo(resource.data.equipoId);
+        // Al programar, la transacción comprueba que el identificador nuevo esté libre.
+        allow get: if resource == null && (administraAcademia() || esDtMiembroActivo());
 
         allow create: if academiaActiva()
           && gestionaEquipo(request.resource.data.equipoId)

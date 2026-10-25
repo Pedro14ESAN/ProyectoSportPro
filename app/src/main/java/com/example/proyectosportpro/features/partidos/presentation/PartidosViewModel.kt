@@ -6,8 +6,9 @@ import com.example.proyectosportpro.features.auth.domain.RolUsuario
 import com.example.proyectosportpro.features.partidos.data.PartidoRepository
 import com.example.proyectosportpro.features.partidos.domain.DatosPartido
 import com.example.proyectosportpro.features.partidos.domain.EquipoPartido
-import com.example.proyectosportpro.features.partidos.domain.EstadoPartido
+import com.example.proyectosportpro.features.partidos.domain.FiltroPartidos
 import com.example.proyectosportpro.features.partidos.domain.Partido
+import com.example.proyectosportpro.features.partidos.domain.ValidacionPartido
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
@@ -16,12 +17,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-
-enum class FiltroPartidos(val etiqueta: String) {
-    PROXIMOS("Próximos"),
-    JUGADOS("Jugados"),
-    TODOS("Todos")
-}
 
 data class PartidosUiState(
     val equipos: List<EquipoPartido> = emptyList(),
@@ -36,12 +31,7 @@ data class PartidosUiState(
         get() = equipos.filter { it.puedeGestionar }
 
     val partidosVisibles: List<Partido>
-        get() = when (filtro) {
-            FiltroPartidos.PROXIMOS -> partidos.filter { it.estado == EstadoPartido.PROGRAMADO }
-            FiltroPartidos.JUGADOS -> partidos.filter { it.estado == EstadoPartido.FINALIZADO }
-                .sortedByDescending { it.fechaHoraMillis }
-            FiltroPartidos.TODOS -> partidos
-        }
+        get() = filtro.aplicar(partidos)
 
     fun puedeGestionar(partido: Partido): Boolean = equipos.any {
         it.puedeGestionar && it.academiaId == partido.academiaId && it.equipoId == partido.equipoId
@@ -98,13 +88,8 @@ class PartidosViewModel : ViewModel() {
         }
     }
 
-    /** Devuelve un mensaje de validación, o null si los datos se pueden enviar. */
-    fun validar(rival: String, lugar: String, fechaHoraMillis: Long?): String? = when {
-        rival.trim().length !in 2..60 -> "El rival debe tener entre 2 y 60 caracteres."
-        lugar.trim().length !in 2..100 -> "El lugar debe tener entre 2 y 100 caracteres."
-        fechaHoraMillis == null -> "Selecciona la fecha y la hora del partido."
-        else -> null
-    }
+    fun validar(rival: String, lugar: String, fechaHoraMillis: Long?): String? =
+        ValidacionPartido.validar(rival, lugar, fechaHoraMillis)
 
     fun programar(equipo: EquipoPartido, datos: DatosPartido) {
         val id = partidoPendienteId ?: repository.nuevoPartidoId(equipo.academiaId)
@@ -125,8 +110,8 @@ class PartidosViewModel : ViewModel() {
         guardar("Partido cancelado.") { repository.cancelar(partido) }
 
     private fun limpiar(datos: DatosPartido) = datos.copy(
-        rival = datos.rival.trim().replace(Regex("\\s+"), " "),
-        lugar = datos.lugar.trim().replace(Regex("\\s+"), " ")
+        rival = ValidacionPartido.normalizar(datos.rival),
+        lugar = ValidacionPartido.normalizar(datos.lugar)
     )
 
     private fun guardar(mensajeExito: String, operacion: suspend () -> Unit) {

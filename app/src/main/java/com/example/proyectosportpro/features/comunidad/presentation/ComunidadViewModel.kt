@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.proyectosportpro.features.auth.domain.RolUsuario
 import com.example.proyectosportpro.features.comunidad.data.AvisoRepository
 import com.example.proyectosportpro.features.comunidad.domain.Aviso
+import com.example.proyectosportpro.features.comunidad.domain.ValidacionAviso
 import com.example.proyectosportpro.features.partidos.data.PartidoRepository
 import com.example.proyectosportpro.features.partidos.domain.EquipoPartido
 import com.google.firebase.auth.FirebaseAuth
@@ -75,12 +76,7 @@ class ComunidadViewModel : ViewModel() {
         }
     }
 
-    /** Devuelve un mensaje de validación, o null si el aviso se puede publicar. */
-    fun validar(titulo: String, mensaje: String): String? = when {
-        titulo.trim().length !in 2..80 -> "El título debe tener entre 2 y 80 caracteres."
-        mensaje.trim().length !in 2..1000 -> "El mensaje debe tener entre 2 y 1000 caracteres."
-        else -> null
-    }
+    fun validar(titulo: String, mensaje: String): String? = ValidacionAviso.validar(titulo, mensaje)
 
     fun publicar(equipo: EquipoPartido, titulo: String, mensaje: String) {
         val id = avisoPendienteId ?: repository.nuevoAvisoId(equipo.academiaId)

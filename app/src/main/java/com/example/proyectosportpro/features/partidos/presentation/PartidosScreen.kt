@@ -32,7 +32,9 @@ import com.example.proyectosportpro.features.partidos.domain.CondicionPartido
 import com.example.proyectosportpro.features.partidos.domain.DatosPartido
 import com.example.proyectosportpro.features.partidos.domain.EquipoPartido
 import com.example.proyectosportpro.features.partidos.domain.EstadoPartido
+import com.example.proyectosportpro.features.partidos.domain.FiltroPartidos
 import com.example.proyectosportpro.features.partidos.domain.Partido
+import com.example.proyectosportpro.features.partidos.domain.ValidacionPartido
 import com.example.proyectosportpro.ui.theme.SportProColors
 import java.time.Instant
 import java.time.LocalDate
@@ -345,8 +347,8 @@ private fun ResultadoDialog(
 ) {
     var favor by remember { mutableStateOf(partido.golesFavor?.toString().orEmpty()) }
     var contra by remember { mutableStateOf(partido.golesContra?.toString().orEmpty()) }
-    val gf = favor.toIntOrNull()?.takeIf { it in 0..99 }
-    val gc = contra.toIntOrNull()?.takeIf { it in 0..99 }
+    val gf = ValidacionPartido.goles(favor)
+    val gc = ValidacionPartido.goles(contra)
     AlertDialog(
         onDismissRequest = onCerrar,
         containerColor = SportProColors.Surface,

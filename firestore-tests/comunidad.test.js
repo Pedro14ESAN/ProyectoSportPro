@@ -3,7 +3,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import {
-  doc, setDoc, updateDoc, collection, query, where, getDocs, serverTimestamp, Timestamp
+  doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, serverTimestamp, Timestamp
 } from 'firebase/firestore';
 
 const A = 'acad1';
@@ -73,4 +73,9 @@ test('el DT retira un aviso sin poder editar su texto', async () => {
   await assertFails(updateDoc(ref, { mensaje: 'Cambiado' }));
   await assertFails(updateDoc(doc(como('jug1'), `academias/${A}/avisos/a1`), { activo: false }));
   await assertSucceeds(updateDoc(ref, { activo: false }));
+});
+
+test('el DT comprueba un aviso nuevo antes de publicarlo', async () => {
+  await assertSucceeds(getDoc(doc(como('dt1'), `academias/${A}/avisos/nuevo`)));
+  await assertFails(getDoc(doc(como('jug2'), `academias/${A}/avisos/nuevo`)));
 });

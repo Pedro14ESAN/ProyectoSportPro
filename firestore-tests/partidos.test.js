@@ -130,3 +130,11 @@ test('al revocar el vínculo el apoderado pierde el acceso', async () => {
   });
   await assertFails(getDocs(collection(como('pad1'), `academias/${A}/partidos`)));
 });
+
+test('el DT comprueba un partido nuevo antes de programarlo, sin leer partidos ajenos', async () => {
+  // La app usa una transacción que lee el documento nuevo antes de crearlo.
+  await assertSucceeds(getDoc(doc(como('dt1'), `academias/${A}/partidos/nuevo`)));
+  await assertSucceeds(getDoc(doc(como('adm'), `academias/${A}/partidos/nuevo`)));
+  await assertFails(getDoc(doc(como('jug1'), `academias/${A}/partidos/nuevo`)));
+  await assertFails(getDoc(doc(como('dt2'), `academias/${A}/partidos/p1`)));
+});
